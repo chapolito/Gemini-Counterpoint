@@ -149,7 +149,7 @@ span.gc-has-counterpoint,
 .gc-has-counterpoint {
   --gc-ul-o: 0.5;
   display: inline;
-  cursor: help;
+  cursor: default;
   padding: 0 0 1.5px 0 !important;
   margin: 0 !important;
   border: 0 !important;
@@ -1176,7 +1176,7 @@ span.gc-has-counterpoint.gc-popover-open,
       el.style.setProperty('margin', '0', 'important');
       el.style.setProperty('border', '0', 'important');
       el.style.setProperty('box-shadow', 'none', 'important');
-      el.style.setProperty('cursor', 'help');
+      el.style.setProperty('cursor', 'default');
       el.style.setProperty('box-decoration-break', 'slice');
       el.style.setProperty('-webkit-box-decoration-break', 'slice');
     } catch (_) { /* ignore */ }
