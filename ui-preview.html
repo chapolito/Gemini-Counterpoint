@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gemini Counterpoint — UI preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --page-bg: #f6f7f9;
+      --page-text: #202124;
+      --page-muted: #5f6368;
+      --panel: #ffffff;
+      --line: #e3e3e3;
+      --chat: #ffffff;
+      --bubble-user: #eef1f6;
+      --gc-font: "Google Sans", "Google Sans Text", system-ui, -apple-system, sans-serif;
+
+      --gc-purple: #8e24aa;
+      --gc-purple-soft: rgba(142, 36, 170, 0.14);
+      --gc-blue: #1a73e8;
+      --gc-pop-bg: #ffffff;
+      --gc-pop-border: #e3e3e3;
+      --gc-pop-text: #202124;
+      --gc-pop-muted: #5f6368;
+      --gc-quote-bg: #f8f9ff;
+      --gc-quote-border: #aecbfa;
+      --gc-quote-text: #1967d2;
+      --gc-toast-bg: #ffffff;
+      --gc-shadow: 0 4px 16px rgba(60, 64, 67, 0.18), 0 1px 3px rgba(60, 64, 67, 0.12);
+      --gc-cta: #444746;
+      --gc-cta-hover-bg: #f0f4f9;
+      --gc-cta-hover-fg: #1f1f1f;
+    }
+
+    html.force-dark {
+      --page-bg: #121316;
+      --page-text: #e8eaed;
+      --page-muted: #9aa0a6;
+      --panel: #1c1d21;
+      --line: #3c4043;
+      --chat: #1c1d21;
+      --bubble-user: #2a2b30;
+
+      --gc-purple: #ce93d8;
+      --gc-purple-soft: rgba(206, 147, 216, 0.22);
+      --gc-blue: #8ab4f8;
+      --gc-pop-bg: #292a2d;
+      --gc-pop-border: #3c4043;
+      --gc-pop-text: #e8eaed;
+      --gc-pop-muted: #9aa0a6;
+      --gc-quote-bg: #1e2430;
+      --gc-quote-border: #3c5a8a;
+      --gc-quote-text: #8ab4f8;
+      --gc-toast-bg: #292a2d;
+      --gc-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+      --gc-cta: #c4c7c5;
+      --gc-cta-hover-bg: #3c4043;
+      --gc-cta-hover-fg: #e8eaed;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not(.force-light) {
+        --page-bg: #121316;
+        --page-text: #e8eaed;
+        --page-muted: #9aa0a6;
+        --panel: #1c1d21;
+        --line: #3c4043;
+        --chat: #1c1d21;
+        --bubble-user: #2a2b30;
+
+        --gc-purple: #ce93d8;
+        --gc-purple-soft: rgba(206, 147, 216, 0.22);
+        --gc-blue: #8ab4f8;
+        --gc-pop-bg: #292a2d;
+        --gc-pop-border: #3c4043;
+        --gc-pop-text: #e8eaed;
+        --gc-pop-muted: #9aa0a6;
+        --gc-quote-bg: #1e2430;
+        --gc-quote-border: #3c5a8a;
+        --gc-quote-text: #8ab4f8;
+        --gc-toast-bg: #292a2d;
+        --gc-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--gc-font);
+      color: var(--page-text);
+      background: var(--page-bg);
+    }
+
+    .page {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+
+    aside {
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    aside h1 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    aside p {
+      margin: 0 0 20px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--page-muted);
+    }
+
+    .theme-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .theme-row button,
+    .state-list button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--page-text);
+      font: inherit;
+      font-size: 12px;
+      padding: 7px 12px;
+      cursor: pointer;
+    }
+
+    .theme-row button.active,
+    .state-list button.active {
+      border-color: var(--gc-purple);
+      background: var(--gc-purple-soft);
+      color: var(--gc-purple);
+    }
+
+    .state-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .state-list button {
+      text-align: left;
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+
+    .state-list button small {
+      display: block;
+      margin-top: 3px;
+      color: var(--page-muted);
+      font-size: 11px;
+    }
+
+    main {
+      position: relative;
+      padding: 40px 48px 140px;
+    }
+
+    .fake-chat { max-width: 680px; margin: 0 auto; }
+
+    .eyebrow {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--page-muted);
+      margin-bottom: 16px;
+    }
+
+    .bubble {
+      background: var(--chat);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-bottom: 14px;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .bubble.user { background: var(--bubble-user); }
+    .bubble .who {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--page-muted);
+      margin-bottom: 8px;
+    }
+
+    .note {
+      margin-top: 24px;
+      font-size: 13px;
+      color: var(--page-muted);
+      max-width: 540px;
+    }
+
+    /* Production Counterpoint styles (mirrored from userscript) */
+    span.gc-has-counterpoint,
+    .gc-has-counterpoint {
+      --gc-ul-o: 0.5;
+      display: inline;
+      cursor: help;
+      padding: 0 0 1.5px 0 !important;
+      margin: 0 !important;
+      border: 0 !important;
+      text-decoration: none !important;
+      box-decoration-break: slice;
+      -webkit-box-decoration-break: slice;
+      background-color: transparent !important;
+      background-image: linear-gradient(
+        90deg,
+        color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 0%,
+        color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 34%,
+        color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 67%,
+        color-mix(in srgb, #EA4335 calc(var(--gc-ul-o) * 100%), transparent) 100%
+      ) !important;
+      background-position: 0 100% !important;
+      background-size: 100% 1.5px !important;
+      background-repeat: no-repeat !important;
+      -webkit-mask-image:
+        linear-gradient(#000, #000),
+        repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
+      -webkit-mask-position: 0 0, 0 100%;
+      -webkit-mask-size: 100% calc(100% - 1.5px), auto 1.5px;
+      -webkit-mask-repeat: no-repeat, repeat-x;
+      -webkit-mask-composite: source-over;
+      mask-image:
+        linear-gradient(#000, #000),
+        repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
+      mask-position: 0 0, 0 100%;
+      mask-size: 100% calc(100% - 1.5px), auto 1.5px;
+      mask-repeat: no-repeat, repeat-x;
+      mask-composite: add;
+    }
+    span.gc-has-counterpoint:hover,
+    .gc-has-counterpoint:hover,
+    span.gc-has-counterpoint.gc-popover-open,
+    .gc-has-counterpoint.gc-popover-open {
+      --gc-ul-o: 1;
+    }
+
+    .example-label {
+      margin: 22px 0 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--page-muted);
+    }
+    .example-label:first-of-type { margin-top: 0; }
+    .bubble p { margin: 0; line-height: 1.55; max-width: 34rem; }
+
+    #gc-popover {
+      position: absolute;
+      width: min(360px, calc(100vw - 24px));
+      background: var(--gc-pop-bg);
+      border: 1px solid var(--gc-pop-border);
+      border-radius: 12px;
+      box-shadow: var(--gc-shadow);
+      padding: 12px;
+      z-index: 20;
+      display: none;
+      font-family: var(--gc-font);
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--gc-pop-text);
+    }
+    #gc-popover.visible { display: block; }
+    #gc-popover .gc-pop-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 6px;
+      padding: 0;
+      color: var(--gc-pop-text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    #gc-popover .gc-sparkle { width: 18px; height: 18px; flex: 0 0 auto; }
+    #gc-popover .gc-pop-title { flex: 1; }
+    #gc-popover .gc-pop-body {
+      margin: 0;
+      padding: 0;
+      text-indent: 0;
+      white-space: normal;
+      color: color-mix(in srgb, var(--gc-pop-text) 70%, transparent);
+    }
+    #gc-popover .gc-pop-kind {
+      font-weight: 600;
+      color: var(--gc-pop-text);
+    }
+    #gc-popover .gc-pop-kind[hidden],
+    #gc-popover .gc-pop-sep[hidden] { display: none !important; }
+    #gc-popover .gc-pop-sep {
+      font-weight: 400;
+      color: color-mix(in srgb, var(--gc-pop-text) 45%, transparent);
+    }
+    #gc-popover .gc-pop-note {
+      font-weight: 400;
+      color: color-mix(in srgb, var(--gc-pop-text) 70%, transparent);
+      white-space: pre-wrap;
+    }
+    #gc-popover .gc-pop-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin: 4px 0 0;
+      padding: 0;
+      border: none;
+    }
+    #gc-popover .gc-pop-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--gc-cta);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background-color 0.12s ease, color 0.12s ease;
+    }
+    #gc-popover .gc-pop-cta:hover {
+      background: var(--gc-cta-hover-bg);
+      color: var(--gc-cta-hover-fg);
+      text-decoration: none;
+    }
+
+    #gc-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: min(320px, calc(100vw - 32px));
+      background: var(--gc-toast-bg);
+      border: 1px solid var(--gc-pop-border);
+      border-radius: 12px;
+      box-shadow: var(--gc-shadow);
+      padding: 12px 14px;
+      z-index: 30;
+      display: none;
+      font-family: var(--gc-font);
+      font-size: 13px;
+      color: var(--gc-pop-text);
+    }
+    #gc-toast.visible { display: block; }
+    #gc-toast .gc-toast-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: var(--gc-pop-text);
+      font-weight: 600;
+      font-size: 12px;
+    }
+    #gc-toast .gc-toast-body { color: var(--gc-pop-muted); white-space: pre-wrap; }
+    #gc-toast .gc-toast-close {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--gc-pop-muted);
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    @media (max-width: 800px) {
+      .page { grid-template-columns: 1fr; }
+      aside { border-right: none; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside>
+      <h1>Gemini Counterpoint</h1>
+      <p>Subtle Gmail-style underline on the host reply. Hover to read Gemini’s take. Light/dark follow theme.</p>
+
+      <div class="theme-row" id="themes">
+        <button type="button" data-theme="system" class="active">System</button>
+        <button type="button" data-theme="light">Light</button>
+        <button type="button" data-theme="dark">Dark</button>
+      </div>
+
+      <div class="state-list" id="states"></div>
+    </aside>
+
+    <main>
+      <div class="fake-chat">
+        <div class="eyebrow">Underline targeting cases — hover any mark</div>
+
+        <div class="example-label">1. Partial end of a line</div>
+        <div class="bubble">
+          <div class="who">Host AI</div>
+          <p>
+            That’s a reasonable use case! Still, I can’t state false facts as if they’re true —
+            even for testing purposes. A few alternatives that might work.
+            <span class="gc-has-counterpoint" data-gc-kind="Logic gap" data-gc-text="Refusing a labeled false statement for testing is fine; the issue is whether the reply’s claims elsewhere are accurate — not the user’s motive.">Any of those work for what you’re building?</span>
+          </p>
+        </div>
+
+        <div class="example-label">2. Short phrase mid-sentence</div>
+        <div class="bubble">
+          <div class="who">Host AI</div>
+          <p>
+            Skip the hobby for the cover letter — it would dilute what’s already a
+            <span class="gc-has-counterpoint" data-gc-kind="Overstated certainty" data-gc-quote="strong, focused narrative" data-gc-text="A single concrete craft detail can strengthen, not dilute, a focused narrative when tied to the job.">strong, focused narrative</span>.
+            Lead with outcomes instead.
+          </p>
+        </div>
+
+        <div class="example-label">3. Wrap across lines (half, then three-quarters)</div>
+        <div class="bubble">
+          <div class="who">Host AI</div>
+          <p>
+            When teams ship AI features, the usual failure mode is treating the model as a single source of truth.
+            A safer pattern is to
+            <span class="gc-has-counterpoint" data-gc-kind="Missing caveat" data-gc-text="Consensus isn’t free: you still need conflict resolution rules, latency budgets, and a clear owner when models disagree.">require an independent second model to disagree before accepting any high-stakes claim, then reconcile both outputs against primary sources before acting</span>
+            — otherwise you just double the confident mistakes.
+          </p>
+        </div>
+
+        <p class="note">
+          Marks should hug the phrase width on each line — never stretch to the bubble edge past the text.
+        </p>
+      </div>
+    </main>
+  </div>
+
+  <div id="gc-popover">
+    <div class="gc-pop-header"><img class="gc-sparkle" src="gemini-sparkle.svg" width="18" height="18" alt="" aria-hidden="true"><span class="gc-pop-title">Counterpoint</span></div>
+    <div class="gc-pop-body"><span class="gc-pop-kind" id="pop-kind" hidden></span><span class="gc-pop-sep" id="pop-sep" hidden> · </span><span class="gc-pop-note" id="pop-quote"></span></div>
+    <div class="gc-pop-actions"><button type="button" class="gc-pop-cta" id="pop-cta">Continue in Gemini →</button></div>
+  </div>
+
+  <div id="gc-toast">
+    <div class="gc-toast-header">
+      <img class="gc-sparkle" src="gemini-sparkle.svg" width="18" height="18" alt="" aria-hidden="true">
+      <span>Gemini Counterpoint</span>
+      <button type="button" class="gc-toast-close" id="toast-close" aria-label="Dismiss">✕</button>
+    </div>
+    <div class="gc-toast-body" id="toast-body"></div>
+  </div>
+
+  <script>
+    const pop = document.getElementById('gc-popover');
+    const kindEl = document.getElementById('pop-kind');
+    const sepEl = document.getElementById('pop-sep');
+    const quote = document.getElementById('pop-quote');
+    const cta = document.getElementById('pop-cta');
+    const toast = document.getElementById('gc-toast');
+    const toastBody = document.getElementById('toast-body');
+    const list = document.getElementById('states');
+    let activeMark = null;
+
+    function marks() {
+      return Array.from(document.querySelectorAll('.fake-chat .gc-has-counterpoint'));
+    }
+
+    function hidePop() {
+      pop.classList.remove('visible');
+      if (activeMark) activeMark.classList.remove('gc-popover-open');
+      activeMark = null;
+    }
+
+    function buildFollowUp(el) {
+      const note = el.getAttribute('data-gc-text') || '';
+      const kind = el.getAttribute('data-gc-kind') || 'a counterpoint';
+      const disputed = el.getAttribute('data-gc-quote') || '';
+      const parts = [
+        `You flagged this in a host AI reply as "${kind}".`,
+        '',
+        `Your note: ${note}`,
+      ];
+      if (disputed) parts.push('', `Disputed phrase: "${disputed}"`);
+      parts.push('', 'Help me dig into this: is the flag fair, what should I watch for, and what clarifying question should I ask next?');
+      return parts.join('\n');
+    }
+
+    cta.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!activeMark) return;
+      const prompt = buildFollowUp(activeMark);
+      const url = `https://gemini.google.com/app?q=${encodeURIComponent(prompt)}`;
+      try { navigator.clipboard?.writeText?.(prompt); } catch (_) {}
+      window.open(url, '_blank', 'noopener,noreferrer');
+    });
+
+    function placePopover(el) {
+      const rect = el.getBoundingClientRect();
+      let left = rect.left;
+      const width = Math.min(360, window.innerWidth - 24);
+      if (left + width > window.innerWidth - 12) left = window.innerWidth - width - 12;
+      if (left < 12) left = 12;
+      pop.style.left = left + 'px';
+      pop.style.top = (rect.bottom + 10) + 'px';
+      if (activeMark && activeMark !== el) activeMark.classList.remove('gc-popover-open');
+      activeMark = el;
+      el.classList.add('gc-popover-open');
+      const kind = el.getAttribute('data-gc-kind') || '';
+      if (kind) {
+        kindEl.textContent = kind;
+        kindEl.hidden = false;
+        sepEl.hidden = false;
+      } else {
+        kindEl.textContent = '';
+        kindEl.hidden = true;
+        sepEl.hidden = true;
+      }
+      quote.textContent = el.getAttribute('data-gc-text') || '';
+      pop.classList.add('visible');
+    }
+
+    function setMarksVisible(on) {
+      marks().forEach((el) => {
+        el.style.backgroundImage = on ? '' : 'none';
+        el.style.cursor = on ? 'help' : 'inherit';
+        if (!on) el.classList.remove('gc-popover-open');
+      });
+      if (!on) hidePop();
+    }
+
+    const STATES = [
+      {
+        id: 'marked',
+        label: 'Marks visible',
+        desc: 'Hover the three phrase cases',
+        apply() {
+          toast.classList.remove('visible');
+          setMarksVisible(true);
+        },
+      },
+      {
+        id: 'silent',
+        label: 'Silent (no marks)',
+        desc: 'Underline off — text unchanged',
+        apply() {
+          toast.classList.remove('visible');
+          setMarksVisible(false);
+        },
+      },
+      {
+        id: 'key',
+        label: 'API key toast',
+        desc: 'Setup / auth',
+        apply() {
+          hidePop();
+          toastBody.textContent = 'API key required — Tampermonkey menu → “Set Gemini API key”';
+          toast.classList.add('visible');
+        },
+      },
+      {
+        id: 'quota',
+        label: 'Quota toast',
+        desc: 'Gemini 429',
+        apply() {
+          hidePop();
+          toastBody.textContent = 'Quota / rate limit\nYou exceeded your current quota…\n\nCheck https://aistudio.google.com/ or wait and retry.';
+          toast.classList.add('visible');
+        },
+      },
+    ];
+
+    function setState(id) {
+      const s = STATES.find((x) => x.id === id);
+      if (!s) return;
+      s.apply();
+      list.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.id === id));
+      history.replaceState(null, '', '#' + id);
+    }
+
+    STATES.forEach((s) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.id = s.id;
+      btn.innerHTML = `${s.label}<small>${s.desc}</small>`;
+      btn.addEventListener('click', () => setState(s.id));
+      list.appendChild(btn);
+    });
+
+    marks().forEach((el) => {
+      el.addEventListener('mouseenter', () => {
+        if (el.style.backgroundImage === 'none') return;
+        placePopover(el);
+      });
+      el.addEventListener('mouseleave', () => {
+        setTimeout(() => {
+          if (!pop.matches(':hover') && !el.matches(':hover')) hidePop();
+        }, 120);
+      });
+    });
+    pop.addEventListener('mouseleave', hidePop);
+
+    document.getElementById('toast-close').addEventListener('click', () => toast.classList.remove('visible'));
+
+    document.querySelectorAll('#themes button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.documentElement.classList.remove('force-light', 'force-dark');
+        if (btn.dataset.theme === 'light') document.documentElement.classList.add('force-light');
+        if (btn.dataset.theme === 'dark') document.documentElement.classList.add('force-dark');
+        document.querySelectorAll('#themes button').forEach((b) => b.classList.toggle('active', b === btn));
+      });
+    });
+
+    const initial = (location.hash || '#marked').slice(1);
+    setState(STATES.some((s) => s.id === initial) ? initial : 'marked');
+  </script>
+</body>
+</html>
