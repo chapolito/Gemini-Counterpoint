@@ -6,13 +6,9 @@ You bring your own Gemini API key. Requests go to Google on **your** quota. Noth
 
 ## Preview
 
-Add a screenshot, GIF, or short video as `docs/preview.gif` (or `docs/preview.png` / `docs/preview.mp4`), then uncomment:
+<video src="docs/preview.mp4" controls playsinline width="720" title="Google Counterpoint preview"></video>
 
-<!--
-![Google Counterpoint preview](docs/preview.gif)
--->
-
-Until then, open [`ui-preview.html`](ui-preview.html) locally for a static look at the underline and popover.
+[Download preview video](docs/preview.mp4) · open [`ui-preview.html`](ui-preview.html) for a static UI playground.
 
 ## What it does
 
