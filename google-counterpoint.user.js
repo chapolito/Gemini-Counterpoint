@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.5.9
+// @version      0.6.4
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
+// @match        https://gemini.google.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -21,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.5.9', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.4', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -38,6 +39,10 @@
   const RING_BUFFER_MAX = 200;
   const RESPONDER_MAX_RETRIES = 2;
   const RESPONDER_DEADLINE_MS = 25000;
+  /** Min gap between Gemini HTTP calls (free-tier RPM friendly). */
+  const GEMINI_MIN_SPACING_MS = 5000;
+  /** After a 429, freeze new Gemini calls for this long. */
+  const RATE_LIMIT_PAUSE_MS = 45000;
   // Prefer flash-lite for free-tier availability; fall back on 404/503 overload
   const CLASSIFIER_MODEL = 'gemini-3.1-flash-lite';
   const RESPONDER_MODEL = 'gemini-3.1-flash-lite';
@@ -144,44 +149,57 @@ html[data-mode="dark"] , html.dark, body.dark, [data-theme="dark"] {
   --gc-cta-hover-fg: #e8eaed;
 }
 
-/* Aurora underline — continuous L→R gradient, dashed via dual mask (text layer + dash strip). */
+/* Aurora underline — full L→R gradient on every wrapped line (clone), dashed via dual mask. */
 span.gc-has-counterpoint,
 .gc-has-counterpoint {
-  --gc-ul-o: 0.5;
+  --gc-ul-o: 0.72;
+  --gc-ul-h: 1.5px;
+  --gc-ul-wash: 0;
   display: inline;
   cursor: default;
-  padding: 0 0 1.5px 0 !important;
-  margin: 0 !important;
+  padding: 0.06em 0.12em var(--gc-ul-h) !important;
+  margin: -0.06em -0.12em 0 !important;
   border: 0 !important;
+  border-radius: 3px;
   text-decoration: none !important;
   text-shadow: none !important;
   box-shadow: none !important;
-  box-decoration-break: slice;
-  -webkit-box-decoration-break: slice;
+  /* clone = each line box gets a fresh blue→red ramp (not one gradient threaded across wraps) */
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   background-color: transparent !important;
-  background-image: linear-gradient(
-    90deg,
-    color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 0%,
-    color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 34%,
-    color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 67%,
-    color-mix(in srgb, #EA4335 calc(var(--gc-ul-o) * 100%), transparent) 100%
-  ) !important;
-  background-position: 0 100% !important;
-  background-size: 100% 1.5px !important;
-  background-repeat: no-repeat !important;
-  /* Layer 1: keep glyphs; layer 2: dash only the underline strip. source-over/add — never intersect. */
+  /* Layer 1: soft aurora wash behind glyphs. Layer 2: dashed underline strip. */
+  background-image:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, #3186ff calc(var(--gc-ul-wash) * 100%), transparent) 0%,
+      color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 34%,
+      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 67%,
+      color-mix(in srgb, #EA4335 calc(var(--gc-ul-wash) * 100%), transparent) 100%
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 0%,
+      color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 34%,
+      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 67%,
+      color-mix(in srgb, #EA4335 calc(var(--gc-ul-o) * 100%), transparent) 100%
+    ) !important;
+  background-position: 0 0, 0 100% !important;
+  background-size: 100% 100%, 100% var(--gc-ul-h) !important;
+  background-repeat: no-repeat, no-repeat !important;
+  /* Layer 1: keep glyphs + wash; layer 2: dash only the underline strip. source-over/add — never intersect. */
   -webkit-mask-image:
     linear-gradient(#000, #000),
     repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
   -webkit-mask-position: 0 0, 0 100%;
-  -webkit-mask-size: 100% calc(100% - 1.5px), auto 1.5px;
+  -webkit-mask-size: 100% calc(100% - var(--gc-ul-h)), auto var(--gc-ul-h);
   -webkit-mask-repeat: no-repeat, repeat-x;
   -webkit-mask-composite: source-over;
   mask-image:
     linear-gradient(#000, #000),
     repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
   mask-position: 0 0, 0 100%;
-  mask-size: 100% calc(100% - 1.5px), auto 1.5px;
+  mask-size: 100% calc(100% - var(--gc-ul-h)), auto var(--gc-ul-h);
   mask-repeat: no-repeat, repeat-x;
   mask-composite: add;
 }
@@ -190,6 +208,8 @@ span.gc-has-counterpoint:hover,
 span.gc-has-counterpoint.gc-popover-open,
 .gc-has-counterpoint.gc-popover-open {
   --gc-ul-o: 1;
+  --gc-ul-h: 2px;
+  --gc-ul-wash: 0.08;
 }
 
 #google-counterpoint-host {
@@ -369,6 +389,9 @@ span.gc-has-counterpoint.gc-popover-open,
     queue: [],
     queueRunning: false,
     activeResponderId: null,
+    lastGeminiCallAt: 0,
+    rateLimitedUntil: 0,
+    rateLimitToastAt: 0,
     overlayHost: null,
     popoverEl: null,
     toastEl: null,
@@ -1126,85 +1149,143 @@ span.gc-has-counterpoint.gc-popover-open,
     return true;
   }
 
-  // Continuous aurora + dash cutaway. Width in px so wrap doesn't map % to column width.
+  // Soft wash (hover) + per-line aurora underline (clone — blue restarts on every wrap).
   const UNDERLINE_BG =
     'linear-gradient(90deg,' +
-    'color-mix(in srgb, #3186ff calc(var(--gc-ul-o, 0.5) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.5) * 100%), transparent) 34%,' +
-    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o, 0.5) * 100%), transparent) 67%,' +
-    'color-mix(in srgb, #EA4335 calc(var(--gc-ul-o, 0.5) * 100%), transparent) 100%)';
+    'color-mix(in srgb, #3186ff calc(var(--gc-ul-wash, 0) * 100%), transparent) 0%,' +
+    'color-mix(in srgb, #34A853 calc(var(--gc-ul-wash, 0) * 100%), transparent) 34%,' +
+    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash, 0) * 100%), transparent) 67%,' +
+    'color-mix(in srgb, #EA4335 calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%),' +
+    'linear-gradient(90deg,' +
+    'color-mix(in srgb, #3186ff calc(var(--gc-ul-o, 0.72) * 100%), transparent) 0%,' +
+    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 34%,' +
+    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 67%,' +
+    'color-mix(in srgb, #EA4335 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 100%)';
   // Dual mask: full glyphs + dashed strip under the aurora (source-over/add — do not intersect)
   const UNDERLINE_MASK =
     'linear-gradient(#000,#000),' +
     'repeating-linear-gradient(90deg,#000 0 1.5px,transparent 1.5px 4.5px)';
 
-  function measureWrappedUnderlineWidth(el) {
+  /** True when a mark has no visible glyphs (e.g. newline-only wrap between blocks). */
+  function isInvisibleCounterpointMark(el) {
+    if (!el) return true;
+    const text = el.textContent || '';
+    if (!/\S/.test(text)) return true;
     try {
       const rects = el.getClientRects();
-      let w = 0;
-      for (let i = 0; i < rects.length; i++) w += rects[i].width;
-      if (w > 1) return Math.ceil(w);
+      for (let i = 0; i < rects.length; i++) {
+        if (rects[i].width >= 0.5 && rects[i].height >= 0.5) return false;
+      }
     } catch (_) { /* ignore */ }
-    return Math.ceil(el.getBoundingClientRect?.().width || el.offsetWidth || 120);
+    return true;
   }
 
-  function paintCounterpointUnderline(el, opts = {}) {
-    if (!el?.style?.setProperty) return;
+  function clearUnderlinePaint(el) {
+    if (!el?.style) return;
     try {
-      const own = measureWrappedUnderlineWidth(el);
-      const total = Math.max(1, Math.ceil(opts.totalWidth || own));
-      const offsetX = Math.max(0, Math.round(opts.offsetX || 0));
+      el.style.removeProperty('background-color');
+      el.style.removeProperty('background-image');
+      el.style.removeProperty('background-blend-mode');
+      el.style.removeProperty('background-position');
+      el.style.removeProperty('background-size');
+      el.style.removeProperty('background-repeat');
+      el.style.removeProperty('-webkit-mask-image');
+      el.style.removeProperty('mask-image');
+      el.style.removeProperty('-webkit-mask-position');
+      el.style.removeProperty('mask-position');
+      el.style.removeProperty('-webkit-mask-size');
+      el.style.removeProperty('mask-size');
+      el.style.removeProperty('-webkit-mask-repeat');
+      el.style.removeProperty('mask-repeat');
+      el.style.removeProperty('-webkit-mask-composite');
+      el.style.removeProperty('mask-composite');
+      el.style.removeProperty('padding');
+    } catch (_) { /* ignore */ }
+  }
+
+  /** Unwrap whitespace-only marks so they can't paint a full-column ghost underline. */
+  function pruneInvisibleCounterpointMarks(root) {
+    const scope = root || document;
+    const marks = scope.querySelectorAll
+      ? scope.querySelectorAll('.gc-has-counterpoint')
+      : [];
+    marks.forEach((el) => {
+      if (!isInvisibleCounterpointMark(el)) return;
+      if (state.activeAnchor === el) hidePopover();
+      const parent = el.parentNode;
+      if (!parent) return;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+      parent.normalize?.();
+    });
+  }
+
+  function paintCounterpointUnderline(el) {
+    if (!el?.style?.setProperty) return;
+    if (isInvisibleCounterpointMark(el)) {
+      clearUnderlinePaint(el);
+      return;
+    }
+    try {
+      // 100% + clone → each wrapped line gets a full blue→red ramp from its own left edge.
       el.style.setProperty('background-color', 'transparent', 'important');
       el.style.setProperty('background-image', UNDERLINE_BG, 'important');
       el.style.setProperty('background-blend-mode', 'normal');
-      el.style.setProperty('background-position', `${-offsetX}px 100%`, 'important');
-      el.style.setProperty('background-size', `${total}px 1.5px`, 'important');
-      el.style.setProperty('background-repeat', 'no-repeat', 'important');
+      el.style.setProperty('background-position', '0 0, 0 100%', 'important');
+      el.style.setProperty(
+        'background-size',
+        `100% 100%, 100% var(--gc-ul-h, 1.5px)`,
+        'important'
+      );
+      el.style.setProperty('background-repeat', 'no-repeat, no-repeat', 'important');
       el.style.setProperty('-webkit-mask-image', UNDERLINE_MASK);
       el.style.setProperty('mask-image', UNDERLINE_MASK);
-      el.style.setProperty('-webkit-mask-position', `0 0, ${-offsetX}px 100%`);
-      el.style.setProperty('mask-position', `0 0, ${-offsetX}px 100%`);
-      el.style.setProperty('-webkit-mask-size', `100% calc(100% - 1.5px), ${total}px 1.5px`);
-      el.style.setProperty('mask-size', `100% calc(100% - 1.5px), ${total}px 1.5px`);
-      el.style.setProperty('-webkit-mask-repeat', 'no-repeat, no-repeat');
-      el.style.setProperty('mask-repeat', 'no-repeat, no-repeat');
+      el.style.setProperty('-webkit-mask-position', '0 0, 0 100%');
+      el.style.setProperty('mask-position', '0 0, 0 100%');
+      el.style.setProperty(
+        '-webkit-mask-size',
+        `100% calc(100% - var(--gc-ul-h, 1.5px)), auto var(--gc-ul-h, 1.5px)`
+      );
+      el.style.setProperty(
+        'mask-size',
+        `100% calc(100% - var(--gc-ul-h, 1.5px)), auto var(--gc-ul-h, 1.5px)`
+      );
+      el.style.setProperty('-webkit-mask-repeat', 'no-repeat, repeat-x');
+      el.style.setProperty('mask-repeat', 'no-repeat, repeat-x');
       // Critical: add/source-over keeps text visible; default intersect hid the mark on Claude
       el.style.setProperty('-webkit-mask-composite', 'source-over');
       el.style.setProperty('mask-composite', 'add');
       el.style.setProperty('text-decoration', 'none', 'important');
-      el.style.setProperty('padding', '0 0 1.5px 0', 'important');
-      el.style.setProperty('margin', '0', 'important');
+      el.style.setProperty('padding', '0.06em 0.12em var(--gc-ul-h, 1.5px)', 'important');
+      el.style.setProperty('margin', '-0.06em -0.12em 0', 'important');
       el.style.setProperty('border', '0', 'important');
+      el.style.setProperty('border-radius', '3px');
       el.style.setProperty('box-shadow', 'none', 'important');
       el.style.setProperty('cursor', 'default');
-      el.style.setProperty('box-decoration-break', 'slice');
-      el.style.setProperty('-webkit-box-decoration-break', 'slice');
+      el.style.setProperty('box-decoration-break', 'clone');
+      el.style.setProperty('-webkit-box-decoration-break', 'clone');
     } catch (_) { /* ignore */ }
   }
 
   function paintCounterpointUnderlineGroup(spans) {
-    const list = Array.from(spans || []).filter((el) => el?.classList?.contains('gc-has-counterpoint'));
-    if (!list.length) return;
-    const widths = list.map((el) => measureWrappedUnderlineWidth(el));
-    const total = widths.reduce((a, b) => a + b, 0) || 1;
-    let offset = 0;
-    list.forEach((el, i) => {
-      paintCounterpointUnderline(el, { totalWidth: total, offsetX: offset });
-      offset += widths[i];
-    });
+    const list = Array.from(spans || []).filter(
+      (el) => el?.classList?.contains('gc-has-counterpoint') && !isInvisibleCounterpointMark(el)
+    );
+    list.forEach((el) => paintCounterpointUnderline(el));
   }
 
   function repaintAllCounterpointUnderlines() {
+    pruneInvisibleCounterpointMarks(document);
     // Group marks that share the same note (siblings from one attach)
     const seen = new Set();
     document.querySelectorAll('.gc-has-counterpoint').forEach((el) => {
-      if (seen.has(el)) return;
+      if (seen.has(el) || isInvisibleCounterpointMark(el)) return;
       const note = el.getAttribute('data-gc-text') || '';
       const parent = el.parentElement;
       let group = [el];
       if (parent && note) {
         group = Array.from(parent.querySelectorAll('.gc-has-counterpoint')).filter(
-          (n) => n.getAttribute('data-gc-text') === note
+          (n) => n.getAttribute('data-gc-text') === note && !isInvisibleCounterpointMark(n)
         );
         if (!group.length) group = [el];
       }
@@ -1355,6 +1436,7 @@ span.gc-has-counterpoint.gc-popover-open,
   function openGeminiFollowUp(anchor) {
     const prompt = buildGeminiFollowUpPrompt(anchor);
     if (!prompt) return;
+    // Gemini ignores ?q= natively — our userscript on gemini.google.com injects it.
     const url = `https://gemini.google.com/app?q=${encodeURIComponent(prompt)}`;
     try {
       if (navigator.clipboard?.writeText) {
@@ -1362,6 +1444,190 @@ span.gc-has-counterpoint.gc-popover-open,
       }
     } catch (_) { /* ignore */ }
     window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Gemini landing: inject ?q= / ?prompt= into the composer (Google doesn't do this itself)
+  // ---------------------------------------------------------------------------
+
+  function isGeminiHost() {
+    return /(^|\.)gemini\.google\.com$/i.test(location.hostname);
+  }
+
+  function readGeminiUrlPrompt() {
+    try {
+      const u = new URL(location.href);
+      return (u.searchParams.get('q') || u.searchParams.get('prompt') || '').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function isVisibleEl(el) {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+
+  function findGeminiComposer() {
+    const selectors = [
+      'rich-textarea .ql-editor[contenteditable="true"]',
+      'div.ql-editor[contenteditable="true"]',
+      'div[contenteditable="true"][role="textbox"]',
+      'div[contenteditable="true"][aria-label*="prompt" i]',
+      'div[contenteditable="true"][aria-label*="Ask" i]',
+      'div[contenteditable="true"][data-placeholder]',
+    ];
+    for (const sel of selectors) {
+      const nodes = document.querySelectorAll(sel);
+      for (const el of nodes) {
+        if (isVisibleEl(el)) return el;
+      }
+    }
+    const all = Array.from(document.querySelectorAll('div[contenteditable="true"]'));
+    let best = null;
+    let bestArea = 0;
+    for (const el of all) {
+      if (!isVisibleEl(el)) continue;
+      const r = el.getBoundingClientRect();
+      const area = r.width * r.height;
+      if (area > bestArea && r.width > 120 && r.height > 18) {
+        best = el;
+        bestArea = area;
+      }
+    }
+    return best;
+  }
+
+  /** Quill-style fill — Gemini's editor ignores plain textContent alone. */
+  function fillGeminiComposer(el, text) {
+    if (!el || !text) return false;
+    try {
+      el.focus();
+
+      // Preferred: Quill expects block children
+      el.innerHTML = '';
+      const lines = String(text).split('\n');
+      for (const line of lines) {
+        const p = document.createElement('p');
+        p.textContent = line.length ? line : '\u00a0';
+        el.appendChild(p);
+      }
+
+      el.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: text,
+        })
+      );
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+
+      // Fallback path if Quill wiped us
+      const got = normalizeText(el.innerText || el.textContent || '');
+      if (!got) {
+        el.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, text);
+      }
+
+      const finalText = normalizeText(el.innerText || el.textContent || '');
+      // Require a meaningful chunk of the prompt to appear
+      const probe = normalizeText(text).slice(0, 40);
+      return finalText.length >= 20 && (!probe || finalText.includes(probe.slice(0, 20)));
+    } catch (e) {
+      console.warn(LOG_PREFIX, 'gemini fill failed', e);
+      return false;
+    }
+  }
+
+  function clearGeminiUrlPromptParam() {
+    try {
+      const u = new URL(location.href);
+      if (!u.searchParams.has('q') && !u.searchParams.has('prompt')) return;
+      u.searchParams.delete('q');
+      u.searchParams.delete('prompt');
+      const next = u.pathname + (u.search || '') + u.hash;
+      history.replaceState(history.state, '', next);
+    } catch (_) { /* ignore */ }
+  }
+
+  function initGeminiUrlPrompt() {
+    console.log(LOG_PREFIX, 'Gemini host active', {
+      version: window.__GOOGLE_COUNTERPOINT__?.version,
+      href: location.href.slice(0, 120),
+    });
+
+    const prompt = readGeminiUrlPrompt();
+    if (!prompt) {
+      console.log(LOG_PREFIX, 'Gemini host — no ?q= / ?prompt= in URL');
+      return;
+    }
+
+    console.log(LOG_PREFIX, 'Gemini URL prompt detected', {
+      len: prompt.length,
+      preview: prompt.slice(0, 80),
+    });
+
+    // Keep clipboard as backup for manual paste
+    try {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(prompt).catch(() => { /* ignore */ });
+      }
+    } catch (_) { /* ignore */ }
+
+    ensureUiRoot();
+
+    const started = Date.now();
+    const maxMs = 20000;
+    let done = false;
+    let attempts = 0;
+
+    const finishFail = (why) => {
+      if (done) return;
+      done = true;
+      clearInterval(poll);
+      try { mo.disconnect(); } catch (_) { /* ignore */ }
+      showToast('Prompt is on the clipboard — click Ask Gemini and paste (⌘V)');
+      console.warn(LOG_PREFIX, 'Gemini auto-fill failed', { why, attempts });
+    };
+
+    const tryFill = () => {
+      if (done) return;
+      attempts += 1;
+      const el = findGeminiComposer();
+      if (!el) {
+        if (Date.now() - started >= maxMs) finishFail('composer-not-found');
+        return;
+      }
+      if (attempts === 1 || attempts % 8 === 0) {
+        console.log(LOG_PREFIX, 'Gemini composer candidate', {
+          attempts,
+          tag: el.tagName,
+          className: String(el.className || '').slice(0, 80),
+        });
+      }
+      if (fillGeminiComposer(el, prompt)) {
+        done = true;
+        clearInterval(poll);
+        try { mo.disconnect(); } catch (_) { /* ignore */ }
+        // Leave ?q= briefly so a remount can retry; strip after a beat
+        setTimeout(clearGeminiUrlPromptParam, 1500);
+        console.log(LOG_PREFIX, 'Gemini composer filled from URL', { attempts });
+        return;
+      }
+      if (Date.now() - started >= maxMs) finishFail('fill-rejected');
+    };
+
+    const poll = setInterval(tryFill, 200);
+    const mo = new MutationObserver(() => tryFill());
+    const startObserve = () => {
+      mo.observe(document.documentElement, { childList: true, subtree: true });
+      tryFill();
+    };
+    if (document.body) startObserve();
+    else document.addEventListener('DOMContentLoaded', startObserve, { once: true });
   }
 
   function showPopoverFor(anchor) {
@@ -1520,12 +1786,24 @@ span.gc-has-counterpoint.gc-popover-open,
     return out;
   }
 
+  /** Shrink [start,end) so we never wrap leading/trailing whitespace (ghost underlines). */
+  function trimRangeToVisibleText(haystack, start, end) {
+    let s = start;
+    let e = end;
+    const h = String(haystack || '');
+    while (s < e && /\s/.test(h[s])) s += 1;
+    while (e > s && /\s/.test(h[e - 1])) e -= 1;
+    if (!(e > s)) return null;
+    return { start: s, end: e };
+  }
+
   function wrapSingleTextPortion(textNode, startOff, endOff) {
     if (!textNode?.parentNode || !(endOff > startOff)) return null;
     const text = textNode.nodeValue || '';
     if (startOff < 0 || endOff > text.length) return null;
     const mid = text.slice(startOff, endOff);
-    if (!mid) return null;
+    // Newline/space-only nodes between <p> and <ul> paint as a full-column aurora line.
+    if (!mid || !/\S/.test(mid)) return null;
     const before = text.slice(0, startOff);
     const after = text.slice(endOff);
     const span = document.createElement('span');
@@ -1542,6 +1820,11 @@ span.gc-has-counterpoint.gc-popover-open,
   /** Wrap [start,end) even when the range spans multiple Claude markdown elements. */
   function wrapRangeInTextNodes(root, start, end) {
     if (!root || !(end > start)) return null;
+    const trimmed = trimRangeToVisibleText(root.textContent || '', start, end);
+    if (!trimmed) return null;
+    start = trimmed.start;
+    end = trimmed.end;
+
     const nodes = collectTextNodes(root);
     if (!nodes.length) return null;
 
@@ -1549,13 +1832,15 @@ span.gc-has-counterpoint.gc-popover-open,
     for (const item of nodes) {
       const from = Math.max(start, item.start);
       const to = Math.min(end, item.end);
-      if (from < to) {
-        overlapping.push({
-          n: item.n,
-          localStart: from - item.start,
-          localEnd: to - item.start,
-        });
-      }
+      if (!(from < to)) continue;
+      const local = (item.n.nodeValue || '').slice(from - item.start, to - item.start);
+      // Skip inter-block whitespace text nodes (e.g. "\n\n" between paragraph and list).
+      if (!/\S/.test(local)) continue;
+      overlapping.push({
+        n: item.n,
+        localStart: from - item.start,
+        localEnd: to - item.start,
+      });
     }
     if (!overlapping.length) return null;
 
@@ -1671,12 +1956,26 @@ span.gc-has-counterpoint.gc-popover-open,
       return false;
     }
 
-    const marks = Array.from(wrapRoot.querySelectorAll?.('.gc-has-counterpoint') || [anchor]);
+    pruneInvisibleCounterpointMarks(wrapRoot);
+    const marks = Array.from(wrapRoot.querySelectorAll?.('.gc-has-counterpoint') || []).filter(
+      (el) => !isInvisibleCounterpointMark(el)
+    );
+    if (!marks.length) {
+      if (anchor && !isInvisibleCounterpointMark(anchor)) marks.push(anchor);
+    }
+    if (!marks.length) {
+      showToast(note);
+      return false;
+    }
     marks.forEach((el) => bindCounterpointAnchor(el, note, kind, quote));
     // Layout may not be final yet — measure after paint for correct multi-line gradient
     requestAnimationFrame(() => {
-      paintCounterpointUnderlineGroup(marks);
-      requestAnimationFrame(() => paintCounterpointUnderlineGroup(marks));
+      pruneInvisibleCounterpointMarks(wrapRoot);
+      const live = Array.from(wrapRoot.querySelectorAll?.('.gc-has-counterpoint') || []).filter(
+        (el) => !isInvisibleCounterpointMark(el)
+      );
+      paintCounterpointUnderlineGroup(live);
+      requestAnimationFrame(() => paintCounterpointUnderlineGroup(live));
     });
     if (isDebug()) {
       console.log(LOG_PREFIX, 'attach-ok', {
@@ -2169,6 +2468,13 @@ span.gc-has-counterpoint.gc-popover-open,
         onError: (err) => {
           console.warn(LOG_PREFIX, 'classifier-error', err?.status || '', err?.message || err);
           handleApiError(err, 'classifier');
+          // Allow a later remount/watch to retry after the rate-limit pause
+          if (err?.status === 429) {
+            state.processedHashes.delete(job.messageIdentity);
+            try {
+              job.messageNode?.removeAttribute?.('data-gc-processed');
+            } catch (_) { /* ignore */ }
+          }
           resolve();
         },
       });
@@ -2206,6 +2512,12 @@ span.gc-has-counterpoint.gc-popover-open,
         },
         onError: (err) => {
           handleApiError(err, 'responder');
+          if (err?.status === 429) {
+            state.processedHashes.delete(job.messageIdentity);
+            try {
+              job.messageNode?.removeAttribute?.('data-gc-processed');
+            } catch (_) { /* ignore */ }
+          }
           resolve();
         },
       });
@@ -2228,6 +2540,45 @@ span.gc-has-counterpoint.gc-popover-open,
     return { text: '', blocked: false, empty: true };
   }
 
+  function pauseQueueForRateLimit(msg) {
+    const until = Date.now() + RATE_LIMIT_PAUSE_MS;
+    const extended = until > state.rateLimitedUntil;
+    state.rateLimitedUntil = Math.max(state.rateLimitedUntil || 0, until);
+    if (!extended) return;
+    const secs = Math.round(RATE_LIMIT_PAUSE_MS / 1000);
+    console.warn(LOG_PREFIX, `Rate limited — pausing Gemini calls for ${secs}s`, msg || '');
+    bump('rate-limit-pause', { ms: RATE_LIMIT_PAUSE_MS, message: String(msg || '').slice(0, 120) });
+    // Avoid toast spam when several queued jobs fail after the same pause window
+    if (Date.now() - (state.rateLimitToastAt || 0) > 20000) {
+      state.rateLimitToastAt = Date.now();
+      showQuotaError(
+        msg ||
+          `Too many requests — pausing ${secs}s before retrying. Check AI Studio quotas if this keeps happening.`
+      );
+    }
+  }
+
+  /** Wait for min spacing between calls and any active 429 pause. */
+  function waitForGeminiGate() {
+    return new Promise((resolve) => {
+      const tick = () => {
+        const now = Date.now();
+        const waitRate = Math.max(0, (state.rateLimitedUntil || 0) - now);
+        const waitSpace = Math.max(0, (state.lastGeminiCallAt || 0) + GEMINI_MIN_SPACING_MS - now);
+        const wait = Math.max(waitRate, waitSpace);
+        if (wait <= 0) {
+          resolve();
+          return;
+        }
+        if (isDebug() && waitRate > 0) {
+          console.log(LOG_PREFIX, 'gemini-gate waiting for rate-limit pause', { ms: waitRate });
+        }
+        setTimeout(tick, Math.min(wait, 1000));
+      };
+      tick();
+    });
+  }
+
   function handleApiError(err, phase) {
     const status = err?.status;
     const body = err?.body;
@@ -2241,7 +2592,8 @@ span.gc-has-counterpoint.gc-popover-open,
     if (status === 429) {
       console.warn(LOG_PREFIX, `Gemini 429 (${phase}):`, msg);
       bump('transient-error', { phase, status, message: msg });
-      showQuotaError(msg);
+      // callGeminiAPI already paused; only pause here if error came from elsewhere
+      if (Date.now() >= (state.rateLimitedUntil || 0)) pauseQueueForRateLimit(msg);
       return;
     }
     if (status === 401 || status === 403) {
@@ -2299,11 +2651,12 @@ span.gc-has-counterpoint.gc-popover-open,
 
     watchdog = setTimeout(() => {
       finishError({ message: 'deadline-exceeded' });
-    }, Math.max(1000, deadlineMs + 500));
+    }, Math.max(1000, deadlineMs + RATE_LIMIT_PAUSE_MS + GEMINI_MIN_SPACING_MS + 500));
 
     const attemptOnce = () => {
       if (settled) return;
-      if (Date.now() - started > deadlineMs) {
+      if (Date.now() - started > deadlineMs + RATE_LIMIT_PAUSE_MS) {
+        // Allow one rate-limit pause inside the overall attempt window
         finishError({ message: 'deadline-exceeded' });
         return;
       }
@@ -2314,12 +2667,14 @@ span.gc-has-counterpoint.gc-popover-open,
         console.log(LOG_PREFIX, 'gemini-request', { model: activeModel, attempt, len: (userMessage || '').length });
       }
 
+      state.lastGeminiCallAt = Date.now();
+
       GM_xmlhttpRequest({
         method: 'POST',
         url,
         headers: { 'Content-Type': 'application/json' },
         data: JSON.stringify(body),
-        timeout: Math.max(3000, deadlineMs - (Date.now() - started)),
+        timeout: Math.max(3000, deadlineMs - (Date.now() - started) + RATE_LIMIT_PAUSE_MS),
         onload: (res) => {
           if (settled) return;
           let data = null;
@@ -2346,19 +2701,32 @@ span.gc-has-counterpoint.gc-popover-open,
                 LOG_PREFIX,
                 `Model ${activeModel} ${overloaded ? 'overloaded' : 'unavailable'} — trying ${modelChain[modelIdx]}`
               );
-              attemptOnce();
+              waitForGeminiGate().then(() => {
+                if (!settled) attemptOnce();
+              });
               return;
             }
 
             const err = { status: res.status, body: data, message: errMsg };
+            // Never retry pure 429s — pause the queue instead (retries amplify free-tier storms).
+            if (res.status === 429) {
+              pauseQueueForRateLimit(errMsg);
+              finishError(err);
+              return;
+            }
             const canRetry =
               retries > 0 &&
               attempt < retries &&
-              (res.status === 429 || res.status === 503 || res.status >= 500) &&
+              (res.status === 503 || res.status >= 500) &&
               Date.now() - started < deadlineMs;
             if (canRetry) {
               attempt += 1;
-              setTimeout(attemptOnce, Math.min(8000, 500 * Math.pow(2, attempt) + Math.random() * 300));
+              const delay = Math.min(8000, 500 * Math.pow(2, attempt) + Math.random() * 300);
+              setTimeout(() => {
+                waitForGeminiGate().then(() => {
+                  if (!settled) attemptOnce();
+                });
+              }, delay);
               return;
             }
             finishError(err);
@@ -2378,7 +2746,11 @@ span.gc-has-counterpoint.gc-popover-open,
           const canRetry = retries > 0 && attempt < retries && Date.now() - started < deadlineMs;
           if (canRetry) {
             attempt += 1;
-            setTimeout(attemptOnce, 500 * Math.pow(2, attempt));
+            setTimeout(() => {
+              waitForGeminiGate().then(() => {
+                if (!settled) attemptOnce();
+              });
+            }, 500 * Math.pow(2, attempt));
             return;
           }
           finishError({ message: 'network-error' });
@@ -2388,7 +2760,11 @@ span.gc-has-counterpoint.gc-popover-open,
           const canRetry = retries > 0 && attempt < retries && Date.now() - started < deadlineMs;
           if (canRetry) {
             attempt += 1;
-            setTimeout(attemptOnce, 500 * Math.pow(2, attempt));
+            setTimeout(() => {
+              waitForGeminiGate().then(() => {
+                if (!settled) attemptOnce();
+              });
+            }, 500 * Math.pow(2, attempt));
             return;
           }
           finishError({ message: 'request-timeout' });
@@ -2396,7 +2772,10 @@ span.gc-has-counterpoint.gc-popover-open,
       });
     };
 
-    attemptOnce();
+    waitForGeminiGate().then(() => {
+      if (settled) return;
+      attemptOnce();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -2747,6 +3126,12 @@ span.gc-has-counterpoint.gc-popover-open,
   }
 
   function init() {
+    if (isGeminiHost()) {
+      console.log(LOG_PREFIX, 'Counterpoint loaded', { site: 'gemini', host: location.hostname });
+      initGeminiUrlPrompt();
+      return;
+    }
+
     const adapter = getAdapter();
     if (!adapter) {
       console.warn(LOG_PREFIX, 'No site adapter for', location.hostname);
