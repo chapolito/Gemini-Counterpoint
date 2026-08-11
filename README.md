@@ -4,11 +4,7 @@ A Tampermonkey userscript that watches **Claude** and **ChatGPT** replies, asks 
 
 You bring your own Gemini API key. Requests go to Google on **your** quota. Nothing is billed through this project.
 
-## Preview
-
 ![Google Counterpoint preview](docs/preview.gif)
-
-[Download MP4](docs/preview.mp4) · open [`ui-preview.html`](ui-preview.html) for a static UI playground.
 
 ## What it does
 
