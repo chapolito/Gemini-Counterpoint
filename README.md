@@ -33,10 +33,10 @@ Supports:
 
 ### 2. Install Google Counterpoint
 
-**Option A — from this repo (after it’s on GitHub)**
+**Option A — from this repo**
 
 1. Open the raw script:  
-   `https://github.com/<you>/google-counterpoint/raw/main/google-counterpoint.user.js`
+   [`google-counterpoint.user.js`](https://github.com/chapolito/Gemini-Counterpoint/raw/main/google-counterpoint.user.js)
 2. Tampermonkey should prompt **Install**. Confirm.
 3. Or: Tampermonkey → Dashboard → **+** → paste the full contents of `google-counterpoint.user.js` → Save.
 
@@ -91,7 +91,7 @@ Free-tier quotas are set by Google and can be tight. Check [AI Studio rate limit
 
 1. Install the loader in Tampermonkey (not the full pasted script, or disable the duplicate).
 2. Chrome → `chrome://extensions` → Tampermonkey → **Allow access to file URLs**.
-3. Update the `@require file:///…` path if your folder moves.
+3. Edit the loader’s `@require file:///…` line to the absolute path of `google-counterpoint.user.js` on your machine.
 4. Edit `google-counterpoint.user.js` → save → hard-refresh the chat tab.
 
 ## Repo layout
@@ -102,7 +102,7 @@ Free-tier quotas are set by Google and can be tight. Check [AI Studio rate limit
 | `google-counterpoint.loader.user.js` | Dev stub with disk `@require` |
 | `ui-preview.html` | Local UI playground for underline / popover |
 | `gemini-sparkle*.svg` | Branding assets |
-| `docs/preview.*` | Screenshot / GIF / video for this README (you add) |
+| `docs/preview.mp4` | README demo video |
 
 ## Troubleshooting
 
@@ -114,4 +114,4 @@ Free-tier quotas are set by Google and can be tight. Check [AI Studio rate limit
 
 ## License
 
-Add a license when you publish the GitHub repo (MIT is a common choice for userscripts). Until then, all rights reserved by the author.
+[MIT](LICENSE)
