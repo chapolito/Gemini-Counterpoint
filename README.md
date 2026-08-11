@@ -1,8 +1,6 @@
 # Google Counterpoint
 
-A Tampermonkey userscript that watches **Claude** and **ChatGPT** replies, asks **Gemini** whether there’s a material disagreement, and — only when it matters — marks the disputed phrase with a dashed aurora underline and a hover popover.
-
-You bring your own Gemini API key. Requests go to Google on **your** quota. Nothing is billed through this project.
+A Tampermonkey userscript that watches **Claude** and **ChatGPT** replies, asks **Gemini** whether there’s a material disagreement, and — only when it matters — marks the disputed phrase with a dashed aurora underline and a hover popover. You bring your own Gemini API key; requests go to Google on **your** quota.
 
 ![Google Counterpoint preview](docs/preview.gif)
 
