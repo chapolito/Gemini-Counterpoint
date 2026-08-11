@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.4
+// @version      0.6.5
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.4', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.5', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ html[data-mode="dark"] , html.dark, body.dark, [data-theme="dark"] {
   --gc-cta-hover-fg: #e8eaed;
 }
 
-/* Aurora underline — full L→R gradient on every wrapped line (clone), dashed via dual mask. */
+/* Aurora underline — one spatial L→R gradient across the whole highlight (all wraps share it). */
 span.gc-has-counterpoint,
 .gc-has-counterpoint {
   --gc-ul-o: 0.72;
@@ -164,7 +164,7 @@ span.gc-has-counterpoint,
   text-decoration: none !important;
   text-shadow: none !important;
   box-shadow: none !important;
-  /* clone = each line box gets a fresh blue→red ramp (not one gradient threaded across wraps) */
+  /* clone + fixed bg (set in JS) → every line samples the same bbox-wide aurora */
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   background-color: transparent !important;
@@ -173,20 +173,25 @@ span.gc-has-counterpoint,
     linear-gradient(
       90deg,
       color-mix(in srgb, #3186ff calc(var(--gc-ul-wash) * 100%), transparent) 0%,
-      color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 34%,
-      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 67%,
-      color-mix(in srgb, #EA4335 calc(var(--gc-ul-wash) * 100%), transparent) 100%
+      color-mix(in srgb, #3186ff calc(var(--gc-ul-wash) * 100%), transparent) 48%,
+      color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 58%,
+      color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 82%,
+      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 92%,
+      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 100%
     ),
     linear-gradient(
       90deg,
       color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 0%,
-      color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 34%,
-      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 67%,
-      color-mix(in srgb, #EA4335 calc(var(--gc-ul-o) * 100%), transparent) 100%
+      color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 48%,
+      color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 58%,
+      color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 82%,
+      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 92%,
+      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 100%
     ) !important;
   background-position: 0 0, 0 100% !important;
   background-size: 100% 100%, 100% var(--gc-ul-h) !important;
   background-repeat: no-repeat, no-repeat !important;
+  background-attachment: fixed, local !important;
   /* Layer 1: keep glyphs + wash; layer 2: dash only the underline strip. source-over/add — never intersect. */
   -webkit-mask-image:
     linear-gradient(#000, #000),
@@ -1149,18 +1154,22 @@ span.gc-has-counterpoint.gc-popover-open,
     return true;
   }
 
-  // Soft wash (hover) + per-line aurora underline (clone — blue restarts on every wrap).
+  // Soft wash + underline share one spatial aurora (fixed to the highlight’s bounding box).
   const UNDERLINE_BG =
     'linear-gradient(90deg,' +
     'color-mix(in srgb, #3186ff calc(var(--gc-ul-wash, 0) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-wash, 0) * 100%), transparent) 34%,' +
-    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash, 0) * 100%), transparent) 67%,' +
-    'color-mix(in srgb, #EA4335 calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%),' +
+    'color-mix(in srgb, #3186ff calc(var(--gc-ul-wash, 0) * 100%), transparent) 48%,' +
+    'color-mix(in srgb, #34A853 calc(var(--gc-ul-wash, 0) * 100%), transparent) 58%,' +
+    'color-mix(in srgb, #34A853 calc(var(--gc-ul-wash, 0) * 100%), transparent) 82%,' +
+    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash, 0) * 100%), transparent) 92%,' +
+    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%),' +
     'linear-gradient(90deg,' +
     'color-mix(in srgb, #3186ff calc(var(--gc-ul-o, 0.72) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 34%,' +
-    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 67%,' +
-    'color-mix(in srgb, #EA4335 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 100%)';
+    'color-mix(in srgb, #3186ff calc(var(--gc-ul-o, 0.72) * 100%), transparent) 48%,' +
+    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 58%,' +
+    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 82%,' +
+    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 92%,' +
+    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 100%)';
   // Dual mask: full glyphs + dashed strip under the aurora (source-over/add — do not intersect)
   const UNDERLINE_MASK =
     'linear-gradient(#000,#000),' +
@@ -1189,6 +1198,7 @@ span.gc-has-counterpoint.gc-popover-open,
       el.style.removeProperty('background-position');
       el.style.removeProperty('background-size');
       el.style.removeProperty('background-repeat');
+      el.style.removeProperty('background-attachment');
       el.style.removeProperty('-webkit-mask-image');
       el.style.removeProperty('mask-image');
       el.style.removeProperty('-webkit-mask-position');
@@ -1220,21 +1230,60 @@ span.gc-has-counterpoint.gc-popover-open,
     });
   }
 
-  function paintCounterpointUnderline(el) {
+  /** Union of visible line boxes — one gradient from leftmost to rightmost edge. */
+  function measureHighlightBounds(els) {
+    let minLeft = Infinity;
+    let maxRight = -Infinity;
+    for (const el of els || []) {
+      if (!el) continue;
+      let rects;
+      try {
+        rects = el.getClientRects();
+      } catch (_) {
+        continue;
+      }
+      for (let i = 0; i < rects.length; i++) {
+        const r = rects[i];
+        if (r.width < 0.5 || r.height < 0.5) continue;
+        if (r.left < minLeft) minLeft = r.left;
+        if (r.right > maxRight) maxRight = r.right;
+      }
+    }
+    if (!(maxRight > minLeft) || !Number.isFinite(minLeft)) return null;
+    return {
+      minLeft: Math.round(minLeft),
+      totalWidth: Math.max(1, Math.ceil(maxRight - minLeft)),
+    };
+  }
+
+  function paintCounterpointUnderline(el, bounds) {
     if (!el?.style?.setProperty) return;
     if (isInvisibleCounterpointMark(el)) {
       clearUnderlinePaint(el);
       return;
     }
     try {
-      // 100% + clone → each wrapped line gets a full blue→red ramp from its own left edge.
+      const b = bounds || measureHighlightBounds([el]);
+      if (!b) {
+        clearUnderlinePaint(el);
+        return;
+      }
+      const { minLeft, totalWidth } = b;
+      // Layer 1 (wash): fixed + bbox-wide → soft spatial aurora behind glyphs (--gc-ul-wash).
+      // Layer 2 (underline): local + thin strip only → must NOT be 100vh or full-opacity
+      // colors fill the text through the glyph mask.
       el.style.setProperty('background-color', 'transparent', 'important');
       el.style.setProperty('background-image', UNDERLINE_BG, 'important');
       el.style.setProperty('background-blend-mode', 'normal');
-      el.style.setProperty('background-position', '0 0, 0 100%', 'important');
+      el.style.setProperty('background-attachment', 'fixed, local', 'important');
+      el.style.setProperty(
+        'background-position',
+        `${minLeft}px 0, 0 100%`,
+        'important'
+      );
       el.style.setProperty(
         'background-size',
-        `100% 100%, 100% var(--gc-ul-h, 1.5px)`,
+        `${totalWidth}px 100vh, ${totalWidth}px var(--gc-ul-h, 1.5px)`,
         'important'
       );
       el.style.setProperty('background-repeat', 'no-repeat, no-repeat', 'important');
@@ -1244,14 +1293,14 @@ span.gc-has-counterpoint.gc-popover-open,
       el.style.setProperty('mask-position', '0 0, 0 100%');
       el.style.setProperty(
         '-webkit-mask-size',
-        `100% calc(100% - var(--gc-ul-h, 1.5px)), auto var(--gc-ul-h, 1.5px)`
+        `100% calc(100% - var(--gc-ul-h, 1.5px)), ${totalWidth}px var(--gc-ul-h, 1.5px)`
       );
       el.style.setProperty(
         'mask-size',
-        `100% calc(100% - var(--gc-ul-h, 1.5px)), auto var(--gc-ul-h, 1.5px)`
+        `100% calc(100% - var(--gc-ul-h, 1.5px)), ${totalWidth}px var(--gc-ul-h, 1.5px)`
       );
-      el.style.setProperty('-webkit-mask-repeat', 'no-repeat, repeat-x');
-      el.style.setProperty('mask-repeat', 'no-repeat, repeat-x');
+      el.style.setProperty('-webkit-mask-repeat', 'no-repeat, no-repeat');
+      el.style.setProperty('mask-repeat', 'no-repeat, no-repeat');
       // Critical: add/source-over keeps text visible; default intersect hid the mark on Claude
       el.style.setProperty('-webkit-mask-composite', 'source-over');
       el.style.setProperty('mask-composite', 'add');
@@ -1271,7 +1320,10 @@ span.gc-has-counterpoint.gc-popover-open,
     const list = Array.from(spans || []).filter(
       (el) => el?.classList?.contains('gc-has-counterpoint') && !isInvisibleCounterpointMark(el)
     );
-    list.forEach((el) => paintCounterpointUnderline(el));
+    if (!list.length) return;
+    const bounds = measureHighlightBounds(list);
+    if (!bounds) return;
+    list.forEach((el) => paintCounterpointUnderline(el, bounds));
   }
 
   function repaintAllCounterpointUnderlines() {

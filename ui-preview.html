@@ -225,20 +225,25 @@
         linear-gradient(
           90deg,
           color-mix(in srgb, #3186ff calc(var(--gc-ul-wash) * 100%), transparent) 0%,
-          color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 34%,
-          color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 67%,
-          color-mix(in srgb, #EA4335 calc(var(--gc-ul-wash) * 100%), transparent) 100%
+          color-mix(in srgb, #3186ff calc(var(--gc-ul-wash) * 100%), transparent) 48%,
+          color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 58%,
+          color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 82%,
+          color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 92%,
+          color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 100%
         ),
         linear-gradient(
           90deg,
           color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 0%,
-          color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 34%,
-          color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 67%,
-          color-mix(in srgb, #EA4335 calc(var(--gc-ul-o) * 100%), transparent) 100%
+          color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 48%,
+          color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 58%,
+          color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 82%,
+          color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 92%,
+          color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 100%
         ) !important;
       background-position: 0 0, 0 100% !important;
       background-size: 100% 100%, 100% var(--gc-ul-h) !important;
       background-repeat: no-repeat, no-repeat !important;
+      background-attachment: fixed, local !important;
       -webkit-mask-image:
         linear-gradient(#000, #000),
         repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
@@ -482,6 +487,26 @@
     function marks() {
       return Array.from(document.querySelectorAll('.fake-chat .gc-has-counterpoint'));
     }
+
+    /** Match production: soft spatial wash + thin underline strip. */
+    function paintSpatialMarks() {
+      marks().forEach((el) => {
+        const rects = Array.from(el.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);
+        if (!rects.length) return;
+        const minLeft = Math.round(Math.min(...rects.map((r) => r.left)));
+        const totalWidth = Math.max(1, Math.ceil(Math.max(...rects.map((r) => r.right)) - minLeft));
+        el.style.setProperty('background-attachment', 'fixed, local', 'important');
+        el.style.setProperty('background-position', `${minLeft}px 0, 0 100%`, 'important');
+        el.style.setProperty(
+          'background-size',
+          `${totalWidth}px 100vh, ${totalWidth}px var(--gc-ul-h, 1.5px)`,
+          'important'
+        );
+      });
+    }
+    paintSpatialMarks();
+    window.addEventListener('resize', paintSpatialMarks, { passive: true });
+    window.addEventListener('scroll', paintSpatialMarks, { passive: true });
 
     function hidePop() {
       pop.classList.remove('visible');
