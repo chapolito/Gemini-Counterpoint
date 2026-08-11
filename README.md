@@ -6,9 +6,9 @@ You bring your own Gemini API key. Requests go to Google on **your** quota. Noth
 
 ## Preview
 
-<video src="docs/preview.mp4" controls playsinline width="720" title="Google Counterpoint preview"></video>
+![Google Counterpoint preview](docs/preview.gif)
 
-[Download preview video](docs/preview.mp4) · open [`ui-preview.html`](ui-preview.html) for a static UI playground.
+[Download MP4](docs/preview.mp4) · open [`ui-preview.html`](ui-preview.html) for a static UI playground.
 
 ## What it does
 
