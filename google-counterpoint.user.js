@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.8
+// @version      0.6.9
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.8', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.9', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -66,11 +66,12 @@ If there is a material problem, return exactly:
 {"verdict":"yes","kind":"<one label from the list below>","quote":"<exact contiguous phrase copied from host_response>","note":"<1-2 plain sentences>"}
 
 Say verdict "yes" only if the host reply contains at least one of:
-- a clear factual error
-- a significant logical leap or unsupported claim
-- an important missing caveat that changes the advice
+- a clear factual error about the topic/substance of the conversation
+- a significant logical leap or unsupported claim about that topic
+- an important missing caveat that changes the advice about that topic
 
-Say verdict "no" for: tone, style, refusals, meta talk about testing/prompting, minor omissions, or disagreements that are just preference.
+Say verdict "no" for: tone, style, refusals, meta talk about testing/prompting, minor omissions, disagreements that are just preference, or disputes about what the host model (or any AI) can/cannot do, knows, remembers, or has in its training data / knowledge cutoff.
+Even when the user asked "can you…", only flag wrong claims about the subject matter itself — never correct the host on its own capabilities, tool access, product limits, or knowledge boundary.
 Default to {"verdict":"no"}.
 
 Use <thread_context> (recent prior turns) only to understand scope — e.g. a specific company, offer, or constraint already established. Do not treat a scoped claim as a universal guarantee, and do not flag problems that exist only in prior turns.
