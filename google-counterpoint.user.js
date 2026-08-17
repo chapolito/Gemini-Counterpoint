@@ -651,6 +651,7 @@ span.gc-has-counterpoint.gc-popover-open,
       if (!node || node.nodeType !== Node.ELEMENT_NODE) return null;
       if (node.matches?.('[data-testid="user-message"], [data-testid="human-message"]')) return null;
       if (node.closest?.('#wiggle-file-content, [data-testid="artifact-panel"]')) return null;
+      if (this.isProgressStatusNode?.(node)) return null;
       const checks = [
         { sel: '.font-claude-response', test: (n) => n.matches?.('.font-claude-response') },
         { sel: '[data-testid="ai-message"]', test: (n) => n.matches?.('[data-testid="ai-message"], [data-testid="message-assistant"]') },
@@ -663,7 +664,12 @@ span.gc-has-counterpoint.gc-popover-open,
             !!n.querySelector?.('.font-claude-response, .standard-markdown, .progressive-markdown'),
         },
       ];
-      for (const c of checks) if (c.test(node)) return c.sel;
+      for (const c of checks) {
+        if (!c.test(node)) continue;
+        // Require real reply markdown — status/progress rows often share response chrome
+        if (!this.hasAnalyzableReplyBody?.(node)) return null;
+        return c.sel;
+      }
       return null;
     },
     isUserMessage(node) {
@@ -673,20 +679,76 @@ span.gc-has-counterpoint.gc-popover-open,
       if (node.matches?.('[data-message-author-role="user"]')) return true;
       return false;
     },
+    /** Claude intermediate status/thinking rows (spinner + short gerund line + chevron). */
+    isProgressStatusNode(node) {
+      if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+      if (
+        node.closest?.(
+          '[data-testid*="status"], [data-testid*="thinking"], [data-testid*="progress"], [data-testid*="tool-use"], [data-testid*="activity"], [aria-busy="true"]'
+        )
+      ) {
+        return true;
+      }
+      // Collapsed progress controls are often buttons without markdown body
+      const btn = node.matches?.('button') ? node : node.closest?.('button');
+      if (btn && !btn.querySelector?.('.standard-markdown, .progressive-markdown')) {
+        const t = normalizeText(btn.innerText || btn.textContent || '');
+        if (t && t.length < 180) return true;
+      }
+      return false;
+    },
+    hasAnalyzableReplyBody(node) {
+      if (!node) return false;
+      if (this.isProgressStatusNode(node)) return false;
+      const md = node.querySelector?.('.standard-markdown, .progressive-markdown');
+      const raw = normalizeText((md || node).innerText || (md || node).textContent || '');
+      if (!raw || raw.length < 20) return false;
+      if (this.looksLikeProgressStatusText(raw)) return false;
+      // Prefer real markdown body; bare response chrome without it is usually status UI
+      if (!md) return false;
+      return true;
+    },
+    looksLikeProgressStatusText(text) {
+      const t = normalizeText(text);
+      if (!t || t.length > 180) return false;
+      // Status rows are single-line; real replies almost always wrap or have paragraphs
+      if (/\n/.test(String(text || '').trim())) return false;
+      // DOM often duplicates the status label into the text we scrape
+      const mid = Math.floor(t.length / 2);
+      if (t.length >= 36) {
+        const a = t.slice(0, mid).trim();
+        const b = t.slice(mid).trim();
+        if (a && a === b) return true;
+      }
+      if (
+        /^(Thinking|Searching|Reading|Writing|Reconciling|Analyzing|Checking|Loading|Planning|Preparing|Running|Fetching|Looking|Scanning|Processing|Exploring|Compiling|Generating|Updating|Reviewing|Summarizing|Investigating)\b/i.test(
+          t
+        )
+      ) {
+        return true;
+      }
+      return false;
+    },
     listAssistantMessages(root) {
       if (!root) return [];
-      const primary = Array.from(root.querySelectorAll('.font-claude-response'));
-      if (primary.length) return primary;
-      const legacy = Array.from(root.querySelectorAll('.font-claude-message, [data-testid="ai-message"]'));
-      if (legacy.length) return legacy;
-      return Array.from(root.querySelectorAll('[data-rs-index]')).filter((n) =>
-        n.querySelector('.font-claude-response, .standard-markdown, .progressive-markdown')
+      const primary = Array.from(root.querySelectorAll('.font-claude-response')).filter((n) =>
+        this.hasAnalyzableReplyBody(n)
       );
+      if (primary.length) return primary;
+      const legacy = Array.from(
+        root.querySelectorAll('.font-claude-message, [data-testid="ai-message"]')
+      ).filter((n) => this.hasAnalyzableReplyBody(n));
+      if (legacy.length) return legacy;
+      return Array.from(root.querySelectorAll('[data-rs-index]'))
+        .filter((n) => n.querySelector('.font-claude-response, .standard-markdown, .progressive-markdown'))
+        .filter((n) => this.hasAnalyzableReplyBody(n));
     },
     extractAssistantText(node) {
       if (!node) return '';
+      if (this.isProgressStatusNode(node) || !this.hasAnalyzableReplyBody(node)) return '';
       const md = node.querySelector?.('.standard-markdown, .progressive-markdown') || node;
       const bubble = normalizeText(md.innerText || md.textContent || '');
+      if (this.looksLikeProgressStatusText(bubble)) return '';
       const looksArtifact =
         !!node.querySelector?.('.artifact-block-cell, [data-testid*="artifact"]') ||
         (/i('ve| have) (created|updated|made|built|generated)/i.test(bubble) && bubble.length < 400);
@@ -764,6 +826,7 @@ span.gc-has-counterpoint.gc-popover-open,
           continue;
         }
         if (n.matches?.('.font-claude-response')) {
+          if (!this.hasAnalyzableReplyBody(n)) continue;
           const text = this.extractAssistantText(n);
           if (text) out.push({ role: 'assistant', text, node: n });
         }
@@ -1258,17 +1321,11 @@ span.gc-has-counterpoint.gc-popover-open,
   const UNDERLINE_BG =
     'linear-gradient(90deg,' +
     'color-mix(in srgb, #3186ff calc(var(--gc-ul-wash, 0) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #3186ff calc(var(--gc-ul-wash, 0) * 100%), transparent) 48%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-wash, 0) * 100%), transparent) 58%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-wash, 0) * 100%), transparent) 82%,' +
-    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash, 0) * 100%), transparent) 92%,' +
+    'color-mix(in srgb, #34A853 calc(var(--gc-ul-wash, 0) * 100%), transparent) 66%,' +
     'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%),' +
     'linear-gradient(90deg,' +
     'color-mix(in srgb, #3186ff calc(var(--gc-ul-o, 0.72) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #3186ff calc(var(--gc-ul-o, 0.72) * 100%), transparent) 48%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 58%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 82%,' +
-    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 92%,' +
+    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 66%,' +
     'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 100%)';
   // Dual mask: full glyphs + dashed strip under the aurora (source-over/add — do not intersect)
   const UNDERLINE_MASK =
