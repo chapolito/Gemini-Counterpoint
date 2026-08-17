@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.5
+// @version      0.6.6
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.5', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.6', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -173,19 +173,13 @@ span.gc-has-counterpoint,
     linear-gradient(
       90deg,
       color-mix(in srgb, #3186ff calc(var(--gc-ul-wash) * 100%), transparent) 0%,
-      color-mix(in srgb, #3186ff calc(var(--gc-ul-wash) * 100%), transparent) 48%,
-      color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 58%,
-      color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 82%,
-      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 92%,
+      color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 66%,
       color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 100%
     ),
     linear-gradient(
       90deg,
       color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 0%,
-      color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 48%,
-      color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 58%,
-      color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 82%,
-      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 92%,
+      color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 66%,
       color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 100%
     ) !important;
   background-position: 0 0, 0 100% !important;
@@ -234,14 +228,24 @@ span.gc-has-counterpoint.gc-popover-open,
   box-shadow: var(--gc-shadow);
   padding: 12px;
   z-index: 2147483647;
-  pointer-events: auto;
-  display: none;
+  display: block;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 250ms ease, visibility 250ms;
   font-family: var(--gc-font);
   color: var(--gc-pop-text);
   font-size: 13px;
   line-height: 1.45;
 }
-#gc-popover.visible { display: block; }
+#gc-popover.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  #gc-popover { transition: none; }
+}
 #gc-popover .gc-pop-header {
   display: flex;
   align-items: center;
