@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.10
+// @version      0.6.11
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.10', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.11', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -179,15 +179,15 @@ span.gc-has-counterpoint,
   background-image:
     linear-gradient(
       90deg,
-      color-mix(in srgb, #3186ff calc(var(--gc-ul-wash) * 100%), transparent) 0%,
-      color-mix(in srgb, #34A853 calc(var(--gc-ul-wash) * 100%), transparent) 66%,
-      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash) * 100%), transparent) 100%
+      color-mix(in srgb, #4092F8 calc(var(--gc-ul-wash) * 100%), transparent) 0%,
+      color-mix(in srgb, #4DAF98 calc(var(--gc-ul-wash) * 100%), transparent) 66%,
+      color-mix(in srgb, #C7DF4D calc(var(--gc-ul-wash) * 100%), transparent) 100%
     ),
     linear-gradient(
       90deg,
-      color-mix(in srgb, #3186ff calc(var(--gc-ul-o) * 100%), transparent) 0%,
-      color-mix(in srgb, #34A853 calc(var(--gc-ul-o) * 100%), transparent) 66%,
-      color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o) * 100%), transparent) 100%
+      color-mix(in srgb, #4092F8 calc(var(--gc-ul-o) * 100%), transparent) 0%,
+      color-mix(in srgb, #4DAF98 calc(var(--gc-ul-o) * 100%), transparent) 66%,
+      color-mix(in srgb, #C7DF4D calc(var(--gc-ul-o) * 100%), transparent) 100%
     ) !important;
   background-position: 0 0, 0 100% !important;
   background-size: 100% 100%, 100% var(--gc-ul-h) !important;
@@ -1325,13 +1325,13 @@ span.gc-has-counterpoint.gc-popover-open,
   // Soft wash + underline share one spatial aurora (fixed to the highlight’s bounding box).
   const UNDERLINE_BG =
     'linear-gradient(90deg,' +
-    'color-mix(in srgb, #3186ff calc(var(--gc-ul-wash, 0) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-wash, 0) * 100%), transparent) 66%,' +
-    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%),' +
+    'color-mix(in srgb, #4092F8 calc(var(--gc-ul-wash, 0) * 100%), transparent) 0%,' +
+    'color-mix(in srgb, #4DAF98 calc(var(--gc-ul-wash, 0) * 100%), transparent) 66%,' +
+    'color-mix(in srgb, #C7DF4D calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%),' +
     'linear-gradient(90deg,' +
-    'color-mix(in srgb, #3186ff calc(var(--gc-ul-o, 0.72) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #34A853 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 66%,' +
-    'color-mix(in srgb, #FBBC05 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 100%)';
+    'color-mix(in srgb, #4092F8 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 0%,' +
+    'color-mix(in srgb, #4DAF98 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 66%,' +
+    'color-mix(in srgb, #C7DF4D calc(var(--gc-ul-o, 0.72) * 100%), transparent) 100%)';
   // Dual mask: full glyphs + dashed strip under the aurora (source-over/add — do not intersect)
   const UNDERLINE_MASK =
     'linear-gradient(#000,#000),' +
