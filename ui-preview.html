@@ -237,7 +237,7 @@
       background-position: 0 0, 0 100% !important;
       background-size: 100% 100%, 100% var(--gc-ul-h) !important;
       background-repeat: no-repeat, no-repeat !important;
-      background-attachment: fixed, local !important;
+      background-attachment: local, local !important;
       -webkit-mask-image:
         linear-gradient(#000, #000),
         repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
@@ -500,11 +500,11 @@
         if (!rects.length) return;
         const minLeft = Math.round(Math.min(...rects.map((r) => r.left)));
         const totalWidth = Math.max(1, Math.ceil(Math.max(...rects.map((r) => r.right)) - minLeft));
-        el.style.setProperty('background-attachment', 'fixed, local', 'important');
-        el.style.setProperty('background-position', `${minLeft}px 0, 0 100%`, 'important');
+        el.style.setProperty('background-attachment', 'local, local', 'important');
+        el.style.setProperty('background-position', `0 0, 0 100%`, 'important');
         el.style.setProperty(
           'background-size',
-          `${totalWidth}px 100vh, ${totalWidth}px var(--gc-ul-h, 1.5px)`,
+          `${totalWidth}px 100%, ${totalWidth}px var(--gc-ul-h, 1.5px)`,
           'important'
         );
       });

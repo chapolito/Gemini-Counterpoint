@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.9
+// @version      0.6.10
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.9', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.10', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -192,7 +192,7 @@ span.gc-has-counterpoint,
   background-position: 0 0, 0 100% !important;
   background-size: 100% 100%, 100% var(--gc-ul-h) !important;
   background-repeat: no-repeat, no-repeat !important;
-  background-attachment: fixed, local !important;
+  background-attachment: local, local !important;
   /* Layer 1: keep glyphs + wash; layer 2: dash only the underline strip. source-over/add — never intersect. */
   -webkit-mask-image:
     linear-gradient(#000, #000),
@@ -1426,22 +1426,22 @@ span.gc-has-counterpoint.gc-popover-open,
         clearUnderlinePaint(el);
         return;
       }
-      const { minLeft, totalWidth } = b;
-      // Layer 1 (wash): fixed + bbox-wide → soft spatial aurora behind glyphs (--gc-ul-wash).
-      // Layer 2 (underline): local + thin strip only → must NOT be 100vh or full-opacity
-      // colors fill the text through the glyph mask.
+      const { totalWidth } = b;
+      // Layer 1 (wash): local to the line box — Claude transform/filter ancestors
+      // break viewport-fixed backgrounds while leaving the local dash strip.
+      // Layer 2 (underline): unchanged — local + thin strip only.
       el.style.setProperty('background-color', 'transparent', 'important');
       el.style.setProperty('background-image', UNDERLINE_BG, 'important');
       el.style.setProperty('background-blend-mode', 'normal');
-      el.style.setProperty('background-attachment', 'fixed, local', 'important');
+      el.style.setProperty('background-attachment', 'local, local', 'important');
       el.style.setProperty(
         'background-position',
-        `${minLeft}px 0, 0 100%`,
+        `0 0, 0 100%`,
         'important'
       );
       el.style.setProperty(
         'background-size',
-        `${totalWidth}px 100vh, ${totalWidth}px var(--gc-ul-h, 1.5px)`,
+        `${totalWidth}px 100%, ${totalWidth}px var(--gc-ul-h, 1.5px)`,
         'important'
       );
       el.style.setProperty('background-repeat', 'no-repeat, no-repeat', 'important');
