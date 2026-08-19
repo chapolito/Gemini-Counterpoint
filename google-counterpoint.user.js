@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.11
+// @version      0.6.12
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.11', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.12', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -1488,23 +1488,53 @@ span.gc-has-counterpoint.gc-popover-open,
     list.forEach((el) => paintCounterpointUnderline(el, bounds));
   }
 
+  /** All wrap fragments for one quote — they may live in different markdown nodes. */
+  function groupMarksFor(el) {
+    if (!el) return [];
+    const gid = el.getAttribute?.('data-gc-group') || '';
+    const scope =
+      el.closest?.(
+        '.font-claude-response, .font-claude-message, [data-message-author-role="assistant"], .standard-markdown, .progressive-markdown, .markdown'
+      ) ||
+      el.parentElement ||
+      document;
+    const all = Array.from(scope.querySelectorAll?.('.gc-has-counterpoint') || []);
+    const visible = (n) => !isInvisibleCounterpointMark(n);
+    if (gid) {
+      const group = all.filter((n) => n.getAttribute('data-gc-group') === gid && visible(n));
+      return group.length ? group : visible(el) ? [el] : [];
+    }
+    const note = el.getAttribute?.('data-gc-text') || '';
+    if (note) {
+      const group = all.filter((n) => n.getAttribute('data-gc-text') === note && visible(n));
+      if (group.length) return group;
+    }
+    return visible(el) ? [el] : [];
+  }
+
+  function setGroupPopoverOpen(anchor, open) {
+    const group = groupMarksFor(anchor);
+    for (const n of group) {
+      if (open) n.classList.add('gc-popover-open');
+      else n.classList.remove('gc-popover-open');
+    }
+    return group;
+  }
+
+  function isNodeInMarkGroup(node, anchor) {
+    if (!node || !anchor) return false;
+    const group = groupMarksFor(anchor);
+    return group.some((n) => n === node || n.contains(node));
+  }
+
   function repaintAllCounterpointUnderlines() {
     pruneInvisibleCounterpointMarks(document);
-    // Group marks that share the same note (siblings from one attach)
     const seen = new Set();
     document.querySelectorAll('.gc-has-counterpoint').forEach((el) => {
       if (seen.has(el) || isInvisibleCounterpointMark(el)) return;
-      const note = el.getAttribute('data-gc-text') || '';
-      const parent = el.parentElement;
-      let group = [el];
-      if (parent && note) {
-        group = Array.from(parent.querySelectorAll('.gc-has-counterpoint')).filter(
-          (n) => n.getAttribute('data-gc-text') === note && !isInvisibleCounterpointMark(n)
-        );
-        if (!group.length) group = [el];
-      }
-      group.forEach((n) => seen.add(n));
-      paintCounterpointUnderlineGroup(group);
+      const group = groupMarksFor(el);
+      (group.length ? group : [el]).forEach((n) => seen.add(n));
+      paintCounterpointUnderlineGroup(group.length ? group : [el]);
     });
   }
 
@@ -1849,11 +1879,13 @@ span.gc-has-counterpoint.gc-popover-open,
     const text = anchor?.getAttribute?.('data-gc-text');
     if (!text) return;
     clearTimeout(state.hidePopoverTimer);
-    if (state.activeAnchor && state.activeAnchor !== anchor) {
-      state.activeAnchor.classList.remove('gc-popover-open');
+    const nextGroupId = anchor.getAttribute('data-gc-group') || '';
+    const prevGroupId = state.activeAnchor?.getAttribute?.('data-gc-group') || '';
+    if (state.activeAnchor && state.activeAnchor !== anchor && nextGroupId !== prevGroupId) {
+      setGroupPopoverOpen(state.activeAnchor, false);
     }
     state.activeAnchor = anchor;
-    anchor.classList.add('gc-popover-open');
+    setGroupPopoverOpen(anchor, true);
     const kind = normalizeKind(anchor.getAttribute('data-gc-kind') || '');
     const kindEl = state.popoverEl.querySelector('.gc-pop-kind');
     const sepEl = state.popoverEl.querySelector('.gc-pop-sep');
@@ -1879,9 +1911,12 @@ span.gc-has-counterpoint.gc-popover-open,
     clearTimeout(state.hidePopoverTimer);
     if (state.popoverEl) state.popoverEl.classList.remove('visible');
     if (state.activeAnchor) {
-      state.activeAnchor.classList.remove('gc-popover-open');
+      setGroupPopoverOpen(state.activeAnchor, false);
       state.activeAnchor = null;
     }
+    document.querySelectorAll('.gc-has-counterpoint.gc-popover-open').forEach((n) => {
+      n.classList.remove('gc-popover-open');
+    });
   }
 
   function scheduleHidePopover() {
@@ -2123,9 +2158,15 @@ span.gc-has-counterpoint.gc-popover-open,
     if (anchor.dataset.gcBound === '1') return;
     anchor.dataset.gcBound = '1';
     anchor.addEventListener('mouseenter', () => showPopoverFor(anchor));
-    anchor.addEventListener('mouseleave', () => scheduleHidePopover());
+    anchor.addEventListener('mouseleave', (ev) => {
+      if (isNodeInMarkGroup(ev.relatedTarget, anchor)) return;
+      scheduleHidePopover();
+    });
     anchor.addEventListener('focusin', () => showPopoverFor(anchor));
-    anchor.addEventListener('focusout', () => scheduleHidePopover());
+    anchor.addEventListener('focusout', (ev) => {
+      if (isNodeInMarkGroup(ev.relatedTarget, anchor)) return;
+      scheduleHidePopover();
+    });
   }
 
   function clearCounterpoint(messageNode) {
@@ -2220,7 +2261,11 @@ span.gc-has-counterpoint.gc-popover-open,
       showToast(note);
       return false;
     }
-    marks.forEach((el) => bindCounterpointAnchor(el, note, kind, quote));
+    const groupId = `g${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    marks.forEach((el) => {
+      try { el.setAttribute('data-gc-group', groupId); } catch (_) { /* ignore */ }
+      bindCounterpointAnchor(el, note, kind, quote);
+    });
     // Layout may not be final yet — measure after paint for correct multi-line gradient
     requestAnimationFrame(() => {
       pruneInvisibleCounterpointMarks(wrapRoot);
