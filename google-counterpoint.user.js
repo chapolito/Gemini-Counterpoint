@@ -421,6 +421,7 @@ span.gc-has-counterpoint.gc-popover-open,
     fontLoading: false,
     restoreTimer: null,
     cacheKeepAliveTimer: null,
+    scanTimer: null,
   };
 
   // ---------------------------------------------------------------------------
@@ -683,17 +684,20 @@ span.gc-has-counterpoint.gc-popover-open,
     /** Claude intermediate status/thinking rows (spinner + short gerund line + chevron). */
     isProgressStatusNode(node) {
       if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+      // Real reply markdown means this is not a status row — busy/thinking ancestors wrap
+      // the whole turn while streaming and must not poison detection.
+      if (node.querySelector?.('.standard-markdown, .progressive-markdown')) return false;
       if (
-        node.closest?.(
-          '[data-testid*="status"], [data-testid*="thinking"], [data-testid*="progress"], [data-testid*="tool-use"], [data-testid*="activity"], [aria-busy="true"]'
+        node.matches?.(
+          '[data-testid*="status"], [data-testid*="thinking"], [data-testid*="progress"], [data-testid*="tool-use"], [data-testid*="activity"]'
         )
       ) {
         return true;
       }
+      if (node.getAttribute?.('aria-busy') === 'true') return true;
       // Collapsed progress controls are often buttons without markdown body
-      const btn = node.matches?.('button') ? node : node.closest?.('button');
-      if (btn && !btn.querySelector?.('.standard-markdown, .progressive-markdown')) {
-        const t = normalizeText(btn.innerText || btn.textContent || '');
+      if (node.matches?.('button')) {
+        const t = normalizeText(node.innerText || node.textContent || '');
         if (t && t.length < 180) return true;
       }
       return false;
@@ -2363,6 +2367,43 @@ span.gc-has-counterpoint.gc-popover-open,
     return tryRestoreFromCache(messageNode, hostText);
   }
 
+  /** Walk up or down from a mutation target to a node assistantMatch accepts. */
+  function resolveAssistantFromNode(rawNode) {
+    const adapter = state.adapter;
+    if (!adapter || !(rawNode instanceof Element)) return null;
+    if (adapter.assistantMatch(rawNode)) return rawNode;
+    const sel = adapter.nestedAssistantSelector;
+    if (sel && typeof rawNode.closest === 'function') {
+      const ancestor = rawNode.closest(sel);
+      if (ancestor && adapter.assistantMatch(ancestor)) return ancestor;
+    }
+    const nested = sel ? rawNode.querySelector?.(sel) : null;
+    if (nested) {
+      if (adapter.assistantMatch(nested)) return nested;
+      const parent = nested.closest?.(sel.split(',')[0].trim());
+      if (parent && adapter.assistantMatch(parent)) return parent;
+    }
+    return null;
+  }
+
+  function scanAssistantMessages(reason) {
+    const adapter = state.adapter;
+    const root = state.conversationSubtree;
+    if (!adapter || !root || !document.contains(root)) return;
+    const nodes = adapter.listAssistantMessages(root) || [];
+    if (!nodes.length) {
+      if (isDebug()) bump('scan-assistants-empty', { reason });
+      return;
+    }
+    if (isDebug()) bump('scan-assistants', { reason, n: nodes.length });
+    for (const n of nodes) maybeHandleAssistantNode(n);
+  }
+
+  function scheduleScanAssistantMessages(reason) {
+    clearTimeout(state.scanTimer);
+    state.scanTimer = setTimeout(() => scanAssistantMessages(reason || 'debounced'), 400);
+  }
+
   function maybeHandleAssistantNode(rawNode) {
     const adapter = state.adapter;
     if (!adapter || !rawNode) return;
@@ -3028,26 +3069,29 @@ span.gc-has-counterpoint.gc-popover-open,
         }
       }
 
+      let sawCandidate = false;
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType !== Node.ELEMENT_NODE) continue;
-          if (adapter.assistantMatch(node)) {
-            maybeHandleAssistantNode(node);
-          } else {
-            const nested = node.querySelector?.(adapter.nestedAssistantSelector);
-            if (nested) {
-              const target =
-                nested.closest?.(adapter.nestedAssistantSelector.split(',')[0].trim()) || nested;
-              if (adapter.assistantMatch(target) || adapter.assistantMatch(nested)) {
-                maybeHandleAssistantNode(adapter.assistantMatch(target) ? target : nested);
-              }
-            }
+          const target = resolveAssistantFromNode(node);
+          if (target) {
+            sawCandidate = true;
+            maybeHandleAssistantNode(target);
+          }
+        }
+        if (mutation.target instanceof Element) {
+          const target = resolveAssistantFromNode(mutation.target);
+          if (target) {
+            sawCandidate = true;
+            maybeHandleAssistantNode(target);
           }
         }
       }
+      if (!sawCandidate) scheduleScanAssistantMessages('mutation');
     });
 
     state.messageObserver.observe(subtree, { childList: true, subtree: true });
+    scanAssistantMessages('observer-attach');
   }
 
   function attachGuardObserver(ancestor, subtree) {
@@ -3253,6 +3297,7 @@ span.gc-has-counterpoint.gc-popover-open,
         }
         const sig = computeRootSignature(state.conversationSubtree);
         if (sig !== state.rootSignature) state.rootSignature = sig;
+        scanAssistantMessages('url-poll');
       }
     }, URL_POLL_MS);
 
@@ -3285,6 +3330,8 @@ span.gc-has-counterpoint.gc-popover-open,
         attachMessageObserver(found.el);
         bump('selector-match', { selector: found.selector, site: adapter.id });
         console.log(LOG_PREFIX, `Conversation container found via ${found.selector} (${adapter.id})`);
+        scanAssistantMessages('container-found');
+        scheduleScanAssistantMessages('container-found-delayed');
         return;
       }
       if (Date.now() - start >= FIND_TIMEOUT_MS) {
