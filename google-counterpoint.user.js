@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.13
+// @version      0.6.17
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.13', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.17', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -238,24 +238,22 @@ span.gc-has-counterpoint.gc-popover-open,
   --gc-ul-h: var(--gc-ul-h-hover);
   --gc-ul-wash: var(--gc-ul-wash-hover);
 }
+/* Dot layers live on #google-counterpoint-host — Claude transform/filter
+   ancestors turn position:fixed into a local containing block and shift dots. */
 .gc-round-layer {
-  display: inline-block;
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 0;
   height: 0;
   overflow: visible;
-  vertical-align: top;
+  pointer-events: none;
   opacity: 0;
+  will-change: transform;
   transition: opacity var(--gc-ul-hover-dur) ease;
 }
-span.gc-has-counterpoint.gc-ul-in + .gc-round-layer,
-.gc-has-counterpoint.gc-ul-in + .gc-round-layer {
-  opacity: var(--gc-ul-o-rest);
-}
-span.gc-has-counterpoint.gc-ul-in:hover + .gc-round-layer,
-.gc-has-counterpoint.gc-ul-in:hover + .gc-round-layer,
-span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
-.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer {
-  opacity: var(--gc-ul-o-hover);
+.gc-round-layer.gc-ul-in {
+  opacity: 1;
 }
 .gc-round-dot {
   position: fixed;
@@ -266,7 +264,7 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
   border: 0;
   border-radius: 50%;
   pointer-events: none;
-  z-index: 2147483645;
+  opacity: var(--gc-ul-o-rest);
   background-image: linear-gradient(
     90deg,
     var(--gc-c1) 0%,
@@ -274,6 +272,10 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
     var(--gc-c3) 100%
   );
   background-repeat: no-repeat;
+  transition: opacity var(--gc-ul-hover-dur) ease;
+}
+.gc-round-layer.is-hot .gc-round-dot {
+  opacity: var(--gc-ul-o-hover);
 }
 @media (prefers-reduced-motion: reduce) {
   span.gc-has-counterpoint,
@@ -1420,39 +1422,99 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
   }
 
   function removeRoundDotLayer(el) {
+    const layer = el?._gcRoundLayer;
+    if (layer?.parentNode) layer.parentNode.removeChild(layer);
+    if (el) {
+      el._gcRoundLayer = null;
+      el._gcDotOrigin = null;
+      el._gcDotLayoutKey = '';
+    }
+    // Legacy: sibling layers from older builds
     const next = el?.nextElementSibling;
     if (next?.classList?.contains('gc-round-layer')) next.remove();
   }
 
   function clearAllRoundDotLayers() {
+    document.querySelectorAll('.gc-has-counterpoint').forEach((el) => {
+      el._gcRoundLayer = null;
+      el._gcDotOrigin = null;
+      el._gcDotLayoutKey = '';
+    });
     document.querySelectorAll('.gc-round-layer').forEach((n) => n.remove());
   }
 
-  function paintCounterpointRoundDots(el, bounds, progress) {
-    if (!el || isInvisibleCounterpointMark(el)) {
-      removeRoundDotLayer(el);
-      return;
+  /** Drop overlay dots whose mark left the document (SPA chat / tab switch). */
+  function pruneOrphanRoundDotLayers() {
+    const live = new Set();
+    document.querySelectorAll('.gc-has-counterpoint').forEach((el) => {
+      if (!document.contains(el) || isInvisibleCounterpointMark(el)) {
+        removeRoundDotLayer(el);
+        return;
+      }
+      if (el._gcRoundLayer) live.add(el._gcRoundLayer);
+    });
+    document.querySelectorAll('.gc-round-layer').forEach((layer) => {
+      if (!live.has(layer)) layer.remove();
+    });
+  }
+
+  function syncRoundLayerState(el) {
+    const layer = el?._gcRoundLayer;
+    if (!layer) return;
+    const settled = el.classList.contains('gc-ul-in');
+    const hot =
+      el.classList.contains('gc-popover-open') ||
+      (typeof el.matches === 'function' && el.matches(':hover'));
+    layer.classList.toggle('gc-ul-in', settled);
+    layer.classList.toggle('is-hot', settled && hot);
+  }
+
+  function syncRoundLayerStateGroup(anchor) {
+    groupMarksFor(anchor).forEach((n) => syncRoundLayerState(n));
+  }
+
+  /** Scroll-only path: move existing layers with one transform (no DOM rebuild). */
+  function syncRoundDotLayersToMarks() {
+    pruneOrphanRoundDotLayers();
+    document.querySelectorAll('.gc-has-counterpoint').forEach((el) => {
+      const layer = el._gcRoundLayer;
+      const origin = el._gcDotOrigin;
+      if (!layer || !origin) return;
+      if (!document.contains(el) || isInvisibleCounterpointMark(el)) {
+        removeRoundDotLayer(el);
+        return;
+      }
+      let rect;
+      try {
+        rect = el.getBoundingClientRect();
+      } catch (_) {
+        removeRoundDotLayer(el);
+        return;
+      }
+      // Detached / off-tree marks often report 0×0 — don't park dots at the viewport origin.
+      if (rect.width < 0.5 && rect.height < 0.5) {
+        removeRoundDotLayer(el);
+        return;
+      }
+      layer.style.visibility = '';
+      const dx = rect.left - origin.left;
+      const dy = rect.top - origin.top;
+      if (dx || dy) layer.style.transform = `translate(${dx}px, ${dy}px)`;
+      else layer.style.transform = '';
+    });
+  }
+
+  function roundDotLayoutKey(rects, totalWidth, progress) {
+    const bits = [`w${totalWidth}`, `n${rects.length}`, `p${Math.round((progress ?? 1) * 1000)}`];
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      bits.push(`${Math.round(r.width)}x${Math.round(r.height)}`);
     }
-    removeRoundDotLayer(el);
-    let rects;
-    try {
-      rects = Array.from(el.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);
-    } catch (_) {
-      return;
-    }
-    if (!rects.length || !bounds) return;
+    return bits.join('|');
+  }
 
-    const { minLeft, totalWidth } = bounds;
-    const d = UL_DOT_D;
-    const gap = UL_DOT_GAP;
-    const period = d + gap;
-    const vis = underlinePathWindows(rects, progress == null ? markUnderlineProgress(el) : progress);
-
-    const layer = document.createElement('span');
-    layer.className = 'gc-round-layer';
-    layer.setAttribute('aria-hidden', 'true');
-    el.insertAdjacentElement('afterend', layer);
-
+  function collectRoundDotSlots(rects, vis, minLeft, totalWidth, d, period) {
+    const slots = [];
     rects.forEach((box) => {
       const win = vis.get(box);
       if (!win || win.right - win.left < 0.5) return;
@@ -1460,17 +1522,101 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
       const end = box.right - d;
       for (let x = box.left; x <= end + 0.01; x += period) {
         if (x + d < win.left - 0.01 || x > win.right + 0.01) continue;
-        const dot = document.createElement('span');
-        dot.className = 'gc-round-dot';
-        dot.style.left = `${x}px`;
-        dot.style.top = `${y}px`;
-        dot.style.width = `${d}px`;
-        dot.style.height = `${d}px`;
-        dot.style.backgroundSize = `${totalWidth}px 100%`;
-        dot.style.backgroundPosition = `${minLeft - x}px 0`;
-        layer.appendChild(dot);
+        slots.push({
+          left: x,
+          top: y,
+          bgPos: `${minLeft - x}px 0`,
+          bgSize: `${totalWidth}px 100%`,
+        });
       }
     });
+    return slots;
+  }
+
+  function paintCounterpointRoundDots(el, bounds, progress) {
+    if (!el || isInvisibleCounterpointMark(el)) {
+      removeRoundDotLayer(el);
+      return;
+    }
+    let rects;
+    try {
+      rects = Array.from(el.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);
+    } catch (_) {
+      removeRoundDotLayer(el);
+      return;
+    }
+    if (!rects.length || !bounds) {
+      removeRoundDotLayer(el);
+      return;
+    }
+
+    ensureUiRoot();
+    const host = state.overlayHost || document.getElementById('google-counterpoint-host');
+    if (!host) return;
+
+    const { minLeft, totalWidth } = bounds;
+    const d = UL_DOT_D;
+    const period = d + UL_DOT_GAP;
+    const prog = progress == null ? markUnderlineProgress(el) : progress;
+    const layoutKey = roundDotLayoutKey(rects, totalWidth, prog);
+    const markRect = el.getBoundingClientRect();
+
+    // Same geometry as last paint — only nudge the layer (scroll / tiny moves).
+    if (
+      el._gcRoundLayer &&
+      el._gcDotOrigin &&
+      el._gcDotLayoutKey === layoutKey &&
+      prog >= 0.999
+    ) {
+      const dx = markRect.left - el._gcDotOrigin.left;
+      const dy = markRect.top - el._gcDotOrigin.top;
+      el._gcRoundLayer.style.transform =
+        dx || dy ? `translate(${dx}px, ${dy}px)` : '';
+      el._gcRoundLayer.style.visibility = '';
+      syncRoundLayerState(el);
+      return;
+    }
+
+    const vis = underlinePathWindows(rects, prog);
+    const slots = collectRoundDotSlots(rects, vis, minLeft, totalWidth, d, period);
+
+    let layer = el._gcRoundLayer;
+    if (!layer || !host.contains(layer)) {
+      layer = document.createElement('div');
+      layer.className = 'gc-round-layer';
+      layer.setAttribute('aria-hidden', 'true');
+      host.appendChild(layer);
+      el._gcRoundLayer = layer;
+    }
+    layer.style.transform = '';
+    layer.style.visibility = '';
+
+
+    const dots = layer.querySelectorAll('.gc-round-dot');
+    const dStr = `${d}px`;
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      let dot = dots[i];
+      if (!dot) {
+        dot = document.createElement('span');
+        dot.className = 'gc-round-dot';
+        dot.style.width = dStr;
+        dot.style.height = dStr;
+        layer.appendChild(dot);
+      }
+      dot.style.left = `${slot.left}px`;
+      dot.style.top = `${slot.top}px`;
+      dot.style.backgroundSize = slot.bgSize;
+      dot.style.backgroundPosition = slot.bgPos;
+      dot.style.display = '';
+    }
+    for (let i = slots.length; i < dots.length; i++) {
+      dots[i].style.display = 'none';
+    }
+
+    el._gcDotOrigin = { left: markRect.left, top: markRect.top };
+    el._gcDotLayoutKey = layoutKey;
+    syncRoundLayerState(el);
   }
 
   function paintCounterpointRoundDotsGroup(spans, bounds, progress) {
@@ -1703,6 +1849,7 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
     for (const n of group) {
       if (open) n.classList.add('gc-popover-open');
       else n.classList.remove('gc-popover-open');
+      syncRoundLayerState(n);
     }
     return group;
   }
@@ -1715,6 +1862,7 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
 
   function repaintAllCounterpointUnderlines() {
     pruneInvisibleCounterpointMarks(document);
+    pruneOrphanRoundDotLayers();
     const seen = new Set();
     document.querySelectorAll('.gc-has-counterpoint').forEach((el) => {
       if (seen.has(el) || isInvisibleCounterpointMark(el)) return;
@@ -1724,10 +1872,109 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
     });
   }
 
-  let underlineRepaintTimer = null;
+  let underlineRepaintRaf = 0;
+  let underlineScrollRaf = 0;
+  let underlineScrollBound = [];
+  let underlineBindTimer = null;
+
   function scheduleUnderlineRepaint() {
-    clearTimeout(underlineRepaintTimer);
-    underlineRepaintTimer = setTimeout(repaintAllCounterpointUnderlines, 80);
+    if (underlineRepaintRaf) return;
+    underlineRepaintRaf = requestAnimationFrame(() => {
+      underlineRepaintRaf = 0;
+      repaintAllCounterpointUnderlines();
+    });
+  }
+
+  /** Scroll: translate layers only — avoid rebuild/lag. */
+  function scheduleUnderlineScrollSync() {
+    if (underlineScrollRaf) return;
+    underlineScrollRaf = requestAnimationFrame(() => {
+      underlineScrollRaf = 0;
+      syncRoundDotLayersToMarks();
+    });
+  }
+
+  function isScrollableOverflow(el) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+    let style;
+    try {
+      style = getComputedStyle(el);
+    } catch (_) {
+      return false;
+    }
+    const oy = style.overflowY;
+    const ox = style.overflowX;
+    const yOk =
+      (oy === 'auto' || oy === 'scroll' || oy === 'overlay') &&
+      el.scrollHeight > el.clientHeight + 1;
+    const xOk =
+      (ox === 'auto' || ox === 'scroll' || ox === 'overlay') &&
+      el.scrollWidth > el.clientWidth + 1;
+    return yOk || xOk;
+  }
+
+  function collectScrollParents(from) {
+    const out = [];
+    let n = from;
+    while (n && n !== document.documentElement) {
+      if (isScrollableOverflow(n)) out.push(n);
+      n = n.parentElement;
+    }
+    return out;
+  }
+
+  function onUnderlineLayoutScroll() {
+    scheduleUnderlineScrollSync();
+  }
+
+  function bindUnderlineLayoutTracking() {
+    for (const el of underlineScrollBound) {
+      try {
+        el.removeEventListener('scroll', onUnderlineLayoutScroll);
+      } catch (_) { /* ignore */ }
+    }
+    underlineScrollBound = [];
+
+    const seeds = new Set();
+    if (state.conversationSubtree) seeds.add(state.conversationSubtree);
+    if (state.stableAncestor) seeds.add(state.stableAncestor);
+    document.querySelectorAll('.gc-has-counterpoint').forEach((el) => seeds.add(el));
+    document
+      .querySelectorAll(
+        '[data-autoscroll-container="true"], #main-content, [role="log"], main, [data-testid="conversation-turns"]'
+      )
+      .forEach((el) => seeds.add(el));
+
+    const parents = new Set();
+    seeds.forEach((el) => {
+      if (!el) return;
+      if (isScrollableOverflow(el)) parents.add(el);
+      collectScrollParents(el).forEach((p) => parents.add(p));
+    });
+
+    parents.forEach((el) => {
+      el.addEventListener('scroll', onUnderlineLayoutScroll, { passive: true });
+      underlineScrollBound.push(el);
+    });
+
+    if (typeof ResizeObserver === 'function') {
+      if (!state.underlineResizeObserver) {
+        state.underlineResizeObserver = new ResizeObserver(() => scheduleUnderlineRepaint());
+      }
+      try {
+        state.underlineResizeObserver.disconnect();
+      } catch (_) { /* ignore */ }
+      seeds.forEach((el) => {
+        try {
+          state.underlineResizeObserver.observe(el);
+        } catch (_) { /* ignore */ }
+      });
+    }
+  }
+
+  function scheduleBindUnderlineLayoutTracking() {
+    clearTimeout(underlineBindTimer);
+    underlineBindTimer = setTimeout(bindUnderlineLayoutTracking, 120);
   }
 
   function ensureGoogleSans() {
@@ -2343,14 +2590,22 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
     paintCounterpointUnderline(anchor);
     if (anchor.dataset.gcBound === '1') return;
     anchor.dataset.gcBound = '1';
-    anchor.addEventListener('mouseenter', () => showPopoverFor(anchor));
+    anchor.addEventListener('mouseenter', () => {
+      syncRoundLayerStateGroup(anchor);
+      showPopoverFor(anchor);
+    });
     anchor.addEventListener('mouseleave', (ev) => {
       if (isNodeInMarkGroup(ev.relatedTarget, anchor)) return;
+      requestAnimationFrame(() => syncRoundLayerStateGroup(anchor));
       scheduleHidePopover();
     });
-    anchor.addEventListener('focusin', () => showPopoverFor(anchor));
+    anchor.addEventListener('focusin', () => {
+      syncRoundLayerStateGroup(anchor);
+      showPopoverFor(anchor);
+    });
     anchor.addEventListener('focusout', (ev) => {
       if (isNodeInMarkGroup(ev.relatedTarget, anchor)) return;
+      requestAnimationFrame(() => syncRoundLayerStateGroup(anchor));
       scheduleHidePopover();
     });
   }
@@ -2463,6 +2718,7 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
       requestAnimationFrame(() => {
         paintCounterpointUnderlineGroup(live);
         runUnderlineEnterAnimation(live);
+        scheduleBindUnderlineLayoutTracking();
       });
     });
     if (isDebug()) {
@@ -3323,6 +3579,8 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
         }
       }
       if (!sawCandidate) scheduleScanAssistantMessages('mutation');
+      scheduleUnderlineRepaint();
+      scheduleBindUnderlineLayoutTracking();
     });
 
     state.messageObserver.observe(subtree, { childList: true, subtree: true });
@@ -3372,6 +3630,9 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
       !!state.conversationSubtree &&
       nextSubtree !== state.conversationSubtree &&
       document.contains(state.conversationSubtree) === false;
+
+    // Drop overlay dots whose marks already left the tree (new chat / tab without reload).
+    pruneOrphanRoundDotLayers();
 
     // ChatGPT promotes new → /c/<uuid> without leaving the thread
     if (
@@ -3435,6 +3696,11 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
       to: { href: nextHref, chatId: nextChatId, rootSignature: nextSig },
     });
 
+    try {
+      cancelAnimationFrame(underlineEnterTick);
+    } catch (_) { /* ignore */ }
+    underlineEnterTick = 0;
+    clearAllRoundDotLayers();
     invalidateAllTokens(reason);
     hideOverlay();
     state.processedHashes.clear();
@@ -3466,6 +3732,8 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
     state.rootSignature = computeRootSignature(found.el);
     state._sigMsgCount = found.el.querySelectorAll(adapter.messageCountSelector).length;
     state.stableAncestor = adapter.findStableAncestor(found.el);
+    scheduleBindUnderlineLayoutTracking();
+    scheduleUnderlineRepaint();
 
     if (!sameSubtree) {
       attachGuardObserver(state.stableAncestor, found.el);
@@ -3502,6 +3770,7 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
             handleContextChange('chat-changed');
           } else if (location.href !== state.href) {
             state.href = location.href;
+            pruneOrphanRoundDotLayers();
           }
         });
         return ret;
@@ -3523,10 +3792,12 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
       }
       if (location.href !== state.href) {
         state.href = location.href;
+        pruneOrphanRoundDotLayers();
       }
       if (state.conversationSubtree) {
         if (!document.contains(state.conversationSubtree)) {
           bump('container-remount');
+          clearAllRoundDotLayers();
           scheduleRescope();
           return;
         }
@@ -3540,7 +3811,10 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
       if (!document.hidden && state.adapter) {
         const nextChat = state.adapter.getChatId();
         if (nextChat !== state.chatId) handleContextChange('chat-changed');
-        else if (location.href !== state.href) state.href = location.href;
+        else if (location.href !== state.href) {
+          state.href = location.href;
+          pruneOrphanRoundDotLayers();
+        }
       }
     });
   }
@@ -3649,7 +3923,13 @@ span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
     patchHistory();
     startUrlPoll();
     window.addEventListener('resize', scheduleUnderlineRepaint, { passive: true });
-    window.addEventListener('scroll', scheduleUnderlineRepaint, { passive: true, capture: true });
+    window.addEventListener('scroll', scheduleUnderlineScrollSync, { passive: true, capture: true });
+    document.addEventListener('scroll', scheduleUnderlineScrollSync, { passive: true, capture: true });
+    try {
+      window.visualViewport?.addEventListener('scroll', scheduleUnderlineScrollSync, { passive: true });
+      window.visualViewport?.addEventListener('resize', scheduleUnderlineRepaint, { passive: true });
+    } catch (_) { /* ignore */ }
+    scheduleBindUnderlineLayoutTracking();
     if (!state.cacheKeepAliveTimer) {
       state.cacheKeepAliveTimer = setInterval(() => {
         if (document.hidden || !state.conversationSubtree) return;
