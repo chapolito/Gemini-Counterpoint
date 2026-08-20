@@ -243,25 +243,7 @@
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
       background-color: transparent !important;
-      background-image:
-        linear-gradient(
-          90deg,
-          color-mix(in srgb, var(--gc-c1) calc(var(--gc-ul-wash) * 100%), transparent) 0%,
-          color-mix(in srgb, var(--gc-c2) calc(var(--gc-ul-wash) * 100%), transparent) var(--gc-stop-mid),
-          color-mix(in srgb, var(--gc-c3) calc(var(--gc-ul-wash) * 100%), transparent) 100%
-        ) !important;
-      background-position: 0 0 !important;
-      background-size: 100% 100% !important;
-      background-repeat: no-repeat !important;
-      background-attachment: local !important;
-      -webkit-mask-image: linear-gradient(#000, #000);
-      mask-image: linear-gradient(#000, #000);
-      -webkit-mask-position: 0 0;
-      mask-position: 0 0;
-      -webkit-mask-size: 100% calc(100% - max(var(--gc-ul-h), var(--gc-ul-dot-d)));
-      mask-size: 100% calc(100% - max(var(--gc-ul-h), var(--gc-ul-dot-d)));
-      -webkit-mask-repeat: no-repeat;
-      mask-repeat: no-repeat;
+      background-image: none !important;
       transition:
         --gc-ul-o var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay),
         --gc-ul-wash var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay),
@@ -298,6 +280,30 @@
     span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
     .gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer {
       opacity: var(--gc-ul-o-hover);
+    }
+    span.gc-has-counterpoint:hover + .gc-round-layer .gc-wash-strip,
+    .gc-has-counterpoint:hover + .gc-round-layer .gc-wash-strip,
+    span.gc-has-counterpoint.gc-popover-open + .gc-round-layer .gc-wash-strip,
+    .gc-has-counterpoint.gc-popover-open + .gc-round-layer .gc-wash-strip {
+      opacity: 1;
+    }
+    .gc-wash-strip {
+      position: fixed;
+      display: block;
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      pointer-events: none;
+      opacity: 0;
+      background-image: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--gc-c1) calc(var(--gc-ul-wash-hover) * 100%), transparent) 0%,
+        color-mix(in srgb, var(--gc-c2) calc(var(--gc-ul-wash-hover) * 100%), transparent) var(--gc-stop-mid),
+        color-mix(in srgb, var(--gc-c3) calc(var(--gc-ul-wash-hover) * 100%), transparent) 100%
+      );
+      background-repeat: no-repeat;
+      transition: opacity var(--gc-ul-hover-dur) ease;
     }
     .gc-round-dot {
       position: fixed;
@@ -592,6 +598,15 @@
       rects.forEach((box) => {
         const win = vis.get(box);
         if (!win || win.right - win.left < 0.5) return;
+        const strip = document.createElement('span');
+        strip.className = 'gc-wash-strip';
+        strip.style.left = `${win.left}px`;
+        strip.style.top = `${box.top}px`;
+        strip.style.width = `${win.right - win.left}px`;
+        strip.style.height = `${Math.max(1, box.height - UL_DOT_D)}px`;
+        strip.style.backgroundSize = `${totalWidth}px 100%`;
+        strip.style.backgroundPosition = `${minLeft - win.left}px 0`;
+        layer.appendChild(strip);
         const y = box.bottom - UL_DOT_D;
         for (let x = box.left; x <= box.right - UL_DOT_D + 0.01; x += period) {
           if (x + UL_DOT_D < win.left - 0.01 || x > win.right + 0.01) continue;
@@ -608,7 +623,7 @@
       });
     }
 
-    /** Match production: spatial wash + round aurora dots. */
+    /** Match production: wash strips + round aurora dots share one bbox gradient. */
     function paintSpatialMarks() {
       document.querySelectorAll('.gc-round-layer').forEach((n) => n.remove());
       marks().forEach((el) => {
@@ -616,9 +631,6 @@
         if (!rects.length) return;
         const minLeft = Math.round(Math.min(...rects.map((r) => r.left)));
         const totalWidth = Math.max(1, Math.ceil(Math.max(...rects.map((r) => r.right)) - minLeft));
-        el.style.setProperty('background-attachment', 'local', 'important');
-        el.style.setProperty('background-position', '0 0', 'important');
-        el.style.setProperty('background-size', `${totalWidth}px 100%`, 'important');
         paintRoundDots(el, { minLeft, totalWidth });
       });
     }
