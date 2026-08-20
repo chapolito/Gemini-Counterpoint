@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.17
+// @version      0.6.18
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.17', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.18', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -199,25 +199,7 @@ span.gc-has-counterpoint,
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   background-color: transparent !important;
-  background-image:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--gc-c1) calc(var(--gc-ul-wash) * 100%), transparent) 0%,
-      color-mix(in srgb, var(--gc-c2) calc(var(--gc-ul-wash) * 100%), transparent) var(--gc-stop-mid),
-      color-mix(in srgb, var(--gc-c3) calc(var(--gc-ul-wash) * 100%), transparent) 100%
-    ) !important;
-  background-position: 0 0 !important;
-  background-size: 100% 100% !important;
-  background-repeat: no-repeat !important;
-  background-attachment: local !important;
-  -webkit-mask-image: linear-gradient(#000, #000);
-  mask-image: linear-gradient(#000, #000);
-  -webkit-mask-position: 0 0;
-  mask-position: 0 0;
-  -webkit-mask-size: 100% calc(100% - max(var(--gc-ul-h), var(--gc-ul-dot-d)));
-  mask-size: 100% calc(100% - max(var(--gc-ul-h), var(--gc-ul-dot-d)));
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
+  background-image: none !important;
   transition:
     --gc-ul-o var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay),
     --gc-ul-wash var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay),
@@ -254,6 +236,27 @@ span.gc-has-counterpoint.gc-popover-open,
 }
 .gc-round-layer.gc-ul-in {
   opacity: 1;
+}
+.gc-round-layer.is-hot .gc-wash-strip {
+  opacity: 1;
+}
+.gc-wash-strip {
+  position: fixed;
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  pointer-events: none;
+  opacity: 0;
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--gc-c1) calc(var(--gc-ul-wash-hover) * 100%), transparent) 0%,
+    color-mix(in srgb, var(--gc-c2) calc(var(--gc-ul-wash-hover) * 100%), transparent) var(--gc-stop-mid),
+    color-mix(in srgb, var(--gc-c3) calc(var(--gc-ul-wash-hover) * 100%), transparent) 100%
+  );
+  background-repeat: no-repeat;
+  transition: opacity var(--gc-ul-hover-dur) ease;
 }
 .gc-round-dot {
   position: fixed;
@@ -1392,14 +1395,6 @@ span.gc-has-counterpoint.gc-popover-open,
     return true;
   }
 
-  // Soft wash — round aurora dots are painted separately (HTML circles).
-  const UNDERLINE_WASH_BG =
-    'linear-gradient(90deg,' +
-    'color-mix(in srgb, #4092F8 calc(var(--gc-ul-wash, 0) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #4DAF98 calc(var(--gc-ul-wash, 0) * 100%), transparent) 66%,' +
-    'color-mix(in srgb, #C7DF4D calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%)';
-  const UNDERLINE_WASH_MASK = 'linear-gradient(#000,#000)';
-
   function markUnderlineProgress(el) {
     if (!el) return 1;
     const raw = getComputedStyle(el).getPropertyValue('--gc-ul-progress');
@@ -1591,6 +1586,42 @@ span.gc-has-counterpoint.gc-popover-open,
     layer.style.transform = '';
     layer.style.visibility = '';
 
+    // Wash strips first (under dots) — same bbox aurora as the underline.
+    const washSlots = [];
+    rects.forEach((box) => {
+      const win = vis.get(box);
+      if (!win || win.right - win.left < 0.5) return;
+      washSlots.push({
+        left: win.left,
+        top: box.top,
+        width: win.right - win.left,
+        height: Math.max(1, box.height - d),
+        bgPos: `${minLeft - win.left}px 0`,
+        bgSize: `${totalWidth}px 100%`,
+      });
+    });
+    const washes = layer.querySelectorAll('.gc-wash-strip');
+    for (let i = 0; i < washSlots.length; i++) {
+      const slot = washSlots[i];
+      let strip = washes[i];
+      if (!strip) {
+        strip = document.createElement('span');
+        strip.className = 'gc-wash-strip';
+        const firstDot = layer.querySelector('.gc-round-dot');
+        if (firstDot) layer.insertBefore(strip, firstDot);
+        else layer.appendChild(strip);
+      }
+      strip.style.left = `${slot.left}px`;
+      strip.style.top = `${slot.top}px`;
+      strip.style.width = `${slot.width}px`;
+      strip.style.height = `${slot.height}px`;
+      strip.style.backgroundSize = slot.bgSize;
+      strip.style.backgroundPosition = slot.bgPos;
+      strip.style.display = '';
+    }
+    for (let i = washSlots.length; i < washes.length; i++) {
+      washes[i].style.display = 'none';
+    }
 
     const dots = layer.querySelectorAll('.gc-round-dot');
     const dStr = `${d}px`;
@@ -1771,28 +1802,22 @@ span.gc-has-counterpoint.gc-popover-open,
         clearUnderlinePaint(el);
         return;
       }
-      const { totalWidth } = b;
+      // Wash + dots share one host overlay aurora; mark itself stays unpainted.
       el.style.setProperty('background-color', 'transparent', 'important');
-      el.style.setProperty('background-image', UNDERLINE_WASH_BG, 'important');
-      el.style.setProperty('background-blend-mode', 'normal');
-      el.style.setProperty('background-attachment', 'local', 'important');
-      el.style.setProperty('background-position', '0 0', 'important');
-      el.style.setProperty('background-size', `${totalWidth}px 100%`, 'important');
-      el.style.setProperty('background-repeat', 'no-repeat', 'important');
-      el.style.setProperty('-webkit-mask-image', UNDERLINE_WASH_MASK);
-      el.style.setProperty('mask-image', UNDERLINE_WASH_MASK);
-      el.style.setProperty('-webkit-mask-position', '0 0');
-      el.style.setProperty('mask-position', '0 0');
-      el.style.setProperty(
-        '-webkit-mask-size',
-        `100% calc(100% - max(var(--gc-ul-h, 1.5px), var(--gc-ul-dot-d, 2px)))`
-      );
-      el.style.setProperty(
-        'mask-size',
-        `100% calc(100% - max(var(--gc-ul-h, 1.5px), var(--gc-ul-dot-d, 2px)))`
-      );
-      el.style.setProperty('-webkit-mask-repeat', 'no-repeat');
-      el.style.setProperty('mask-repeat', 'no-repeat');
+      el.style.setProperty('background-image', 'none', 'important');
+      el.style.removeProperty('background-blend-mode');
+      el.style.removeProperty('background-attachment');
+      el.style.removeProperty('background-position');
+      el.style.removeProperty('background-size');
+      el.style.removeProperty('background-repeat');
+      el.style.removeProperty('-webkit-mask-image');
+      el.style.removeProperty('mask-image');
+      el.style.removeProperty('-webkit-mask-position');
+      el.style.removeProperty('mask-position');
+      el.style.removeProperty('-webkit-mask-size');
+      el.style.removeProperty('mask-size');
+      el.style.removeProperty('-webkit-mask-repeat');
+      el.style.removeProperty('mask-repeat');
       el.style.setProperty('text-decoration', 'none', 'important');
       el.style.setProperty(
         'padding',
