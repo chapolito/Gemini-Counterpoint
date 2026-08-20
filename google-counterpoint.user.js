@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Google Counterpoint
 // @namespace    http://tampermonkey.net/
-// @version      0.6.12
+// @version      0.6.13
 // @description  Google Counterpoint for Claude/ChatGPT — Gemini speaks up on material disagreements
 // @author       Jesse O'Chapo
 // @match        https://claude.ai/*
@@ -22,7 +22,7 @@
   'use strict';
 
   try {
-    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.12', source: 'disk' };
+    window.__GOOGLE_COUNTERPOINT__ = { version: '0.6.13', source: 'disk' };
   } catch (_) { /* ignore */ }
 
   // ---------------------------------------------------------------------------
@@ -54,6 +54,9 @@
   const CACHE_STORAGE_KEY = 'google_counterpoint_cache_v1';
   const CACHE_STORAGE_KEY_LEGACY = 'gemini_counterpoint_cache_v1';
   const CACHE_MAX_ENTRIES = 250;
+  /** Round underline dots (HTML circles) — 2px diameter, 3px gap. */
+  const UL_DOT_D = 2;
+  const UL_DOT_GAP = 3;
 
   const ANALYZE_PROMPT = `You evaluate another AI's reply for material problems a careful reader would want flagged.
 
@@ -156,66 +159,131 @@ html[data-mode="dark"] , html.dark, body.dark, [data-theme="dark"] {
   --gc-cta-hover-fg: #e8eaed;
 }
 
-/* Aurora underline — one spatial L→R gradient across the whole highlight (all wraps share it). */
+/* Aurora underline — spatial wash on the mark; round dots painted in JS. */
+@property --gc-ul-o { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --gc-ul-wash { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --gc-ul-progress { syntax: "<number>"; inherits: true; initial-value: 0; }
+:root {
+  --gc-ul-dur: 500ms;
+  --gc-ul-delay: 0ms;
+  --gc-ul-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --gc-ul-hover-dur: 160ms;
+  --gc-ul-o-rest: 0.7;
+  --gc-ul-o-hover: 1;
+  --gc-ul-wash-rest: 0;
+  --gc-ul-wash-hover: 0.08;
+  --gc-ul-h-rest: 1.5px;
+  --gc-ul-h-hover: 1.5px;
+  --gc-ul-dot-d: 2px;
+  --gc-ul-dot-gap: 3px;
+  --gc-c1: #4092F8;
+  --gc-c2: #4DAF98;
+  --gc-c3: #C7DF4D;
+  --gc-stop-mid: 66%;
+}
 span.gc-has-counterpoint,
 .gc-has-counterpoint {
-  --gc-ul-o: 0.72;
-  --gc-ul-h: 1.5px;
-  --gc-ul-wash: 0;
+  --gc-ul-o: 0;
+  --gc-ul-wash: var(--gc-ul-wash-rest);
+  --gc-ul-progress: 0;
+  --gc-ul-h: var(--gc-ul-h-rest);
   display: inline;
   cursor: default;
-  padding: 0.06em 0.12em var(--gc-ul-h) !important;
+  padding: 0.06em 0.12em max(var(--gc-ul-h), var(--gc-ul-dot-d)) !important;
   margin: -0.06em -0.12em 0 !important;
   border: 0 !important;
-  border-radius: 3px;
+  border-radius: 0;
   text-decoration: none !important;
   text-shadow: none !important;
   box-shadow: none !important;
-  /* clone + fixed bg (set in JS) → every line samples the same bbox-wide aurora */
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   background-color: transparent !important;
-  /* Layer 1: soft aurora wash behind glyphs. Layer 2: dashed underline strip. */
   background-image:
     linear-gradient(
       90deg,
-      color-mix(in srgb, #4092F8 calc(var(--gc-ul-wash) * 100%), transparent) 0%,
-      color-mix(in srgb, #4DAF98 calc(var(--gc-ul-wash) * 100%), transparent) 66%,
-      color-mix(in srgb, #C7DF4D calc(var(--gc-ul-wash) * 100%), transparent) 100%
-    ),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, #4092F8 calc(var(--gc-ul-o) * 100%), transparent) 0%,
-      color-mix(in srgb, #4DAF98 calc(var(--gc-ul-o) * 100%), transparent) 66%,
-      color-mix(in srgb, #C7DF4D calc(var(--gc-ul-o) * 100%), transparent) 100%
+      color-mix(in srgb, var(--gc-c1) calc(var(--gc-ul-wash) * 100%), transparent) 0%,
+      color-mix(in srgb, var(--gc-c2) calc(var(--gc-ul-wash) * 100%), transparent) var(--gc-stop-mid),
+      color-mix(in srgb, var(--gc-c3) calc(var(--gc-ul-wash) * 100%), transparent) 100%
     ) !important;
-  background-position: 0 0, 0 100% !important;
-  background-size: 100% 100%, 100% var(--gc-ul-h) !important;
-  background-repeat: no-repeat, no-repeat !important;
-  background-attachment: local, local !important;
-  /* Layer 1: keep glyphs + wash; layer 2: dash only the underline strip. source-over/add — never intersect. */
-  -webkit-mask-image:
-    linear-gradient(#000, #000),
-    repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
-  -webkit-mask-position: 0 0, 0 100%;
-  -webkit-mask-size: 100% calc(100% - var(--gc-ul-h)), auto var(--gc-ul-h);
-  -webkit-mask-repeat: no-repeat, repeat-x;
-  -webkit-mask-composite: source-over;
-  mask-image:
-    linear-gradient(#000, #000),
-    repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
-  mask-position: 0 0, 0 100%;
-  mask-size: 100% calc(100% - var(--gc-ul-h)), auto var(--gc-ul-h);
-  mask-repeat: no-repeat, repeat-x;
-  mask-composite: add;
+  background-position: 0 0 !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-attachment: local !important;
+  -webkit-mask-image: linear-gradient(#000, #000);
+  mask-image: linear-gradient(#000, #000);
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
+  -webkit-mask-size: 100% calc(100% - max(var(--gc-ul-h), var(--gc-ul-dot-d)));
+  mask-size: 100% calc(100% - max(var(--gc-ul-h), var(--gc-ul-dot-d)));
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  transition:
+    --gc-ul-o var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay),
+    --gc-ul-wash var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay),
+    --gc-ul-progress var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay);
+}
+.gc-has-counterpoint.gc-ul-in {
+  --gc-ul-o: var(--gc-ul-o-rest);
+  --gc-ul-progress: 1;
+}
+.gc-has-counterpoint.gc-ul-no-trans {
+  transition: none !important;
 }
 span.gc-has-counterpoint:hover,
 .gc-has-counterpoint:hover,
 span.gc-has-counterpoint.gc-popover-open,
 .gc-has-counterpoint.gc-popover-open {
-  --gc-ul-o: 1;
-  --gc-ul-h: 2px;
-  --gc-ul-wash: 0.08;
+  --gc-ul-o: var(--gc-ul-o-hover);
+  --gc-ul-h: var(--gc-ul-h-hover);
+  --gc-ul-wash: var(--gc-ul-wash-hover);
+}
+.gc-round-layer {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  vertical-align: top;
+  opacity: 0;
+  transition: opacity var(--gc-ul-hover-dur) ease;
+}
+span.gc-has-counterpoint.gc-ul-in + .gc-round-layer,
+.gc-has-counterpoint.gc-ul-in + .gc-round-layer {
+  opacity: var(--gc-ul-o-rest);
+}
+span.gc-has-counterpoint.gc-ul-in:hover + .gc-round-layer,
+.gc-has-counterpoint.gc-ul-in:hover + .gc-round-layer,
+span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
+.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer {
+  opacity: var(--gc-ul-o-hover);
+}
+.gc-round-dot {
+  position: fixed;
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2147483645;
+  background-image: linear-gradient(
+    90deg,
+    var(--gc-c1) 0%,
+    var(--gc-c2) var(--gc-stop-mid),
+    var(--gc-c3) 100%
+  );
+  background-repeat: no-repeat;
+}
+@media (prefers-reduced-motion: reduce) {
+  span.gc-has-counterpoint,
+  .gc-has-counterpoint {
+    transition: none !important;
+  }
+  .gc-has-counterpoint.gc-ul-in {
+    --gc-ul-progress: 1;
+    --gc-ul-o: var(--gc-ul-o-rest);
+  }
 }
 
 #google-counterpoint-host {
@@ -1322,20 +1390,147 @@ span.gc-has-counterpoint.gc-popover-open,
     return true;
   }
 
-  // Soft wash + underline share one spatial aurora (fixed to the highlight’s bounding box).
-  const UNDERLINE_BG =
+  // Soft wash — round aurora dots are painted separately (HTML circles).
+  const UNDERLINE_WASH_BG =
     'linear-gradient(90deg,' +
     'color-mix(in srgb, #4092F8 calc(var(--gc-ul-wash, 0) * 100%), transparent) 0%,' +
     'color-mix(in srgb, #4DAF98 calc(var(--gc-ul-wash, 0) * 100%), transparent) 66%,' +
-    'color-mix(in srgb, #C7DF4D calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%),' +
-    'linear-gradient(90deg,' +
-    'color-mix(in srgb, #4092F8 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 0%,' +
-    'color-mix(in srgb, #4DAF98 calc(var(--gc-ul-o, 0.72) * 100%), transparent) 66%,' +
-    'color-mix(in srgb, #C7DF4D calc(var(--gc-ul-o, 0.72) * 100%), transparent) 100%)';
-  // Dual mask: full glyphs + dashed strip under the aurora (source-over/add — do not intersect)
-  const UNDERLINE_MASK =
-    'linear-gradient(#000,#000),' +
-    'repeating-linear-gradient(90deg,#000 0 1.5px,transparent 1.5px 4.5px)';
+    'color-mix(in srgb, #C7DF4D calc(var(--gc-ul-wash, 0) * 100%), transparent) 100%)';
+  const UNDERLINE_WASH_MASK = 'linear-gradient(#000,#000)';
+
+  function markUnderlineProgress(el) {
+    if (!el) return 1;
+    const raw = getComputedStyle(el).getPropertyValue('--gc-ul-progress');
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n : 1;
+  }
+
+  /** Visible underline length per line box along the wrap reading path. */
+  function underlinePathWindows(rects, progress) {
+    const seq = rects;
+    const total = seq.reduce((sum, box) => sum + box.width, 0) || 1;
+    let rest = Math.max(0, Math.min(1, progress)) * total;
+    const vis = new Map();
+    seq.forEach((box) => {
+      const amount = Math.max(0, Math.min(box.width, rest));
+      rest -= amount;
+      vis.set(box, { left: box.left, right: box.left + amount });
+    });
+    return vis;
+  }
+
+  function removeRoundDotLayer(el) {
+    const next = el?.nextElementSibling;
+    if (next?.classList?.contains('gc-round-layer')) next.remove();
+  }
+
+  function clearAllRoundDotLayers() {
+    document.querySelectorAll('.gc-round-layer').forEach((n) => n.remove());
+  }
+
+  function paintCounterpointRoundDots(el, bounds, progress) {
+    if (!el || isInvisibleCounterpointMark(el)) {
+      removeRoundDotLayer(el);
+      return;
+    }
+    removeRoundDotLayer(el);
+    let rects;
+    try {
+      rects = Array.from(el.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);
+    } catch (_) {
+      return;
+    }
+    if (!rects.length || !bounds) return;
+
+    const { minLeft, totalWidth } = bounds;
+    const d = UL_DOT_D;
+    const gap = UL_DOT_GAP;
+    const period = d + gap;
+    const vis = underlinePathWindows(rects, progress == null ? markUnderlineProgress(el) : progress);
+
+    const layer = document.createElement('span');
+    layer.className = 'gc-round-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    el.insertAdjacentElement('afterend', layer);
+
+    rects.forEach((box) => {
+      const win = vis.get(box);
+      if (!win || win.right - win.left < 0.5) return;
+      const y = box.bottom - d;
+      const end = box.right - d;
+      for (let x = box.left; x <= end + 0.01; x += period) {
+        if (x + d < win.left - 0.01 || x > win.right + 0.01) continue;
+        const dot = document.createElement('span');
+        dot.className = 'gc-round-dot';
+        dot.style.left = `${x}px`;
+        dot.style.top = `${y}px`;
+        dot.style.width = `${d}px`;
+        dot.style.height = `${d}px`;
+        dot.style.backgroundSize = `${totalWidth}px 100%`;
+        dot.style.backgroundPosition = `${minLeft - x}px 0`;
+        layer.appendChild(dot);
+      }
+    });
+  }
+
+  function paintCounterpointRoundDotsGroup(spans, bounds, progress) {
+    const list = Array.from(spans || []).filter(
+      (el) => el?.classList?.contains('gc-has-counterpoint') && !isInvisibleCounterpointMark(el)
+    );
+    if (!list.length) return;
+    const b = bounds || measureHighlightBounds(list);
+    if (!b) return;
+    list.forEach((el) => paintCounterpointRoundDots(el, b, progress));
+  }
+
+  let underlineEnterTick = 0;
+  function tickUnderlineEnter(spans) {
+    cancelAnimationFrame(underlineEnterTick);
+    const list = Array.from(spans || []).filter(
+      (el) => el?.classList?.contains('gc-has-counterpoint') && !isInvisibleCounterpointMark(el)
+    );
+    if (!list.length) return;
+    const bounds = measureHighlightBounds(list);
+    const step = () => {
+      list.forEach((el) => paintCounterpointRoundDots(el, bounds, markUnderlineProgress(el)));
+      const running = list.some((el) => markUnderlineProgress(el) < 0.999);
+      if (running) underlineEnterTick = requestAnimationFrame(step);
+      else paintCounterpointRoundDotsGroup(list, bounds);
+    };
+    underlineEnterTick = requestAnimationFrame(step);
+  }
+
+  function runUnderlineEnterAnimation(spans) {
+    const list = Array.from(spans || []).filter(
+      (el) => el?.classList?.contains('gc-has-counterpoint') && !isInvisibleCounterpointMark(el)
+    );
+    if (!list.length) return;
+    const bounds = measureHighlightBounds(list);
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+      list.forEach((el) => el.classList.add('gc-ul-in'));
+      paintCounterpointRoundDotsGroup(list, bounds);
+      return;
+    }
+    list.forEach((el) => {
+      el.classList.add('gc-ul-no-trans');
+      el.classList.remove('gc-ul-in');
+      el.style.setProperty('--gc-ul-o', '0');
+      el.style.setProperty('--gc-ul-progress', '0');
+      el.style.setProperty('--gc-ul-wash', '0');
+    });
+    paintCounterpointRoundDotsGroup(list, bounds, 0);
+    requestAnimationFrame(() => {
+      list.forEach((el) => {
+        el.classList.remove('gc-ul-no-trans');
+        el.style.removeProperty('--gc-ul-o');
+        el.style.removeProperty('--gc-ul-progress');
+        el.style.removeProperty('--gc-ul-wash');
+        void el.offsetWidth;
+        el.classList.add('gc-ul-in');
+      });
+      tickUnderlineEnter(list);
+    });
+  }
 
   /** True when a mark has no visible glyphs (e.g. newline-only wrap between blocks). */
   function isInvisibleCounterpointMark(el) {
@@ -1431,46 +1626,36 @@ span.gc-has-counterpoint.gc-popover-open,
         return;
       }
       const { totalWidth } = b;
-      // Layer 1 (wash): local to the line box — Claude transform/filter ancestors
-      // break viewport-fixed backgrounds while leaving the local dash strip.
-      // Layer 2 (underline): unchanged — local + thin strip only.
       el.style.setProperty('background-color', 'transparent', 'important');
-      el.style.setProperty('background-image', UNDERLINE_BG, 'important');
+      el.style.setProperty('background-image', UNDERLINE_WASH_BG, 'important');
       el.style.setProperty('background-blend-mode', 'normal');
-      el.style.setProperty('background-attachment', 'local, local', 'important');
-      el.style.setProperty(
-        'background-position',
-        `0 0, 0 100%`,
-        'important'
-      );
-      el.style.setProperty(
-        'background-size',
-        `${totalWidth}px 100%, ${totalWidth}px var(--gc-ul-h, 1.5px)`,
-        'important'
-      );
-      el.style.setProperty('background-repeat', 'no-repeat, no-repeat', 'important');
-      el.style.setProperty('-webkit-mask-image', UNDERLINE_MASK);
-      el.style.setProperty('mask-image', UNDERLINE_MASK);
-      el.style.setProperty('-webkit-mask-position', '0 0, 0 100%');
-      el.style.setProperty('mask-position', '0 0, 0 100%');
+      el.style.setProperty('background-attachment', 'local', 'important');
+      el.style.setProperty('background-position', '0 0', 'important');
+      el.style.setProperty('background-size', `${totalWidth}px 100%`, 'important');
+      el.style.setProperty('background-repeat', 'no-repeat', 'important');
+      el.style.setProperty('-webkit-mask-image', UNDERLINE_WASH_MASK);
+      el.style.setProperty('mask-image', UNDERLINE_WASH_MASK);
+      el.style.setProperty('-webkit-mask-position', '0 0');
+      el.style.setProperty('mask-position', '0 0');
       el.style.setProperty(
         '-webkit-mask-size',
-        `100% calc(100% - var(--gc-ul-h, 1.5px)), ${totalWidth}px var(--gc-ul-h, 1.5px)`
+        `100% calc(100% - max(var(--gc-ul-h, 1.5px), var(--gc-ul-dot-d, 2px)))`
       );
       el.style.setProperty(
         'mask-size',
-        `100% calc(100% - var(--gc-ul-h, 1.5px)), ${totalWidth}px var(--gc-ul-h, 1.5px)`
+        `100% calc(100% - max(var(--gc-ul-h, 1.5px), var(--gc-ul-dot-d, 2px)))`
       );
-      el.style.setProperty('-webkit-mask-repeat', 'no-repeat, no-repeat');
-      el.style.setProperty('mask-repeat', 'no-repeat, no-repeat');
-      // Critical: add/source-over keeps text visible; default intersect hid the mark on Claude
-      el.style.setProperty('-webkit-mask-composite', 'source-over');
-      el.style.setProperty('mask-composite', 'add');
+      el.style.setProperty('-webkit-mask-repeat', 'no-repeat');
+      el.style.setProperty('mask-repeat', 'no-repeat');
       el.style.setProperty('text-decoration', 'none', 'important');
-      el.style.setProperty('padding', '0.06em 0.12em var(--gc-ul-h, 1.5px)', 'important');
+      el.style.setProperty(
+        'padding',
+        '0.06em 0.12em max(var(--gc-ul-h, 1.5px), var(--gc-ul-dot-d, 2px))',
+        'important'
+      );
       el.style.setProperty('margin', '-0.06em -0.12em 0', 'important');
       el.style.setProperty('border', '0', 'important');
-      el.style.setProperty('border-radius', '3px');
+      el.style.setProperty('border-radius', '0');
       el.style.setProperty('box-shadow', 'none', 'important');
       el.style.setProperty('cursor', 'default');
       el.style.setProperty('box-decoration-break', 'clone');
@@ -1486,6 +1671,7 @@ span.gc-has-counterpoint.gc-popover-open,
     const bounds = measureHighlightBounds(list);
     if (!bounds) return;
     list.forEach((el) => paintCounterpointUnderline(el, bounds));
+    paintCounterpointRoundDotsGroup(list, bounds);
   }
 
   /** All wrap fragments for one quote — they may live in different markdown nodes. */
@@ -2181,6 +2367,7 @@ span.gc-has-counterpoint.gc-popover-open,
     const marks = messageNode.querySelectorAll?.('.gc-has-counterpoint') || [];
     marks.forEach((el) => {
       if (state.activeAnchor === el) hidePopover();
+      removeRoundDotLayer(el);
       const parent = el.parentNode;
       if (!parent) return;
       while (el.firstChild) parent.insertBefore(el.firstChild, el);
@@ -2273,7 +2460,10 @@ span.gc-has-counterpoint.gc-popover-open,
         (el) => !isInvisibleCounterpointMark(el)
       );
       paintCounterpointUnderlineGroup(live);
-      requestAnimationFrame(() => paintCounterpointUnderlineGroup(live));
+      requestAnimationFrame(() => {
+        paintCounterpointUnderlineGroup(live);
+        runUnderlineEnterAnimation(live);
+      });
     });
     if (isDebug()) {
       console.log(LOG_PREFIX, 'attach-ok', {
