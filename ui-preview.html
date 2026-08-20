@@ -206,17 +206,39 @@
     }
 
     /* Production Counterpoint styles (mirrored from userscript) */
+    @property --gc-ul-o { syntax: "<number>"; inherits: true; initial-value: 0; }
+    @property --gc-ul-wash { syntax: "<number>"; inherits: true; initial-value: 0; }
+    @property --gc-ul-progress { syntax: "<number>"; inherits: true; initial-value: 0; }
+    :root {
+      --gc-ul-dur: 500ms;
+      --gc-ul-delay: 0ms;
+      --gc-ul-ease: cubic-bezier(0.4, 0, 0.2, 1);
+      --gc-ul-hover-dur: 160ms;
+      --gc-ul-o-rest: 0.7;
+      --gc-ul-o-hover: 1;
+      --gc-ul-wash-rest: 0;
+      --gc-ul-wash-hover: 0.08;
+      --gc-ul-h-rest: 1.5px;
+      --gc-ul-h-hover: 1.5px;
+      --gc-ul-dot-d: 2px;
+      --gc-ul-dot-gap: 3px;
+      --gc-c1: #4092F8;
+      --gc-c2: #4DAF98;
+      --gc-c3: #C7DF4D;
+      --gc-stop-mid: 66%;
+    }
     span.gc-has-counterpoint,
     .gc-has-counterpoint {
-      --gc-ul-o: 0.72;
-      --gc-ul-h: 1.5px;
-      --gc-ul-wash: 0;
+      --gc-ul-o: 0;
+      --gc-ul-wash: var(--gc-ul-wash-rest);
+      --gc-ul-progress: 0;
+      --gc-ul-h: var(--gc-ul-h-rest);
       display: inline;
       cursor: default;
-      padding: 0.06em 0.12em var(--gc-ul-h) !important;
+      padding: 0.06em 0.12em max(var(--gc-ul-h), var(--gc-ul-dot-d)) !important;
       margin: -0.06em -0.12em 0 !important;
       border: 0 !important;
-      border-radius: 3px;
+      border-radius: 0;
       text-decoration: none !important;
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
@@ -224,42 +246,84 @@
       background-image:
         linear-gradient(
           90deg,
-          color-mix(in srgb, #4092F8 calc(var(--gc-ul-wash) * 100%), transparent) 0%,
-          color-mix(in srgb, #4DAF98 calc(var(--gc-ul-wash) * 100%), transparent) 66%,
-          color-mix(in srgb, #C7DF4D calc(var(--gc-ul-wash) * 100%), transparent) 100%
-        ),
-        linear-gradient(
-          90deg,
-          color-mix(in srgb, #4092F8 calc(var(--gc-ul-o) * 100%), transparent) 0%,
-          color-mix(in srgb, #4DAF98 calc(var(--gc-ul-o) * 100%), transparent) 66%,
-          color-mix(in srgb, #C7DF4D calc(var(--gc-ul-o) * 100%), transparent) 100%
+          color-mix(in srgb, var(--gc-c1) calc(var(--gc-ul-wash) * 100%), transparent) 0%,
+          color-mix(in srgb, var(--gc-c2) calc(var(--gc-ul-wash) * 100%), transparent) var(--gc-stop-mid),
+          color-mix(in srgb, var(--gc-c3) calc(var(--gc-ul-wash) * 100%), transparent) 100%
         ) !important;
-      background-position: 0 0, 0 100% !important;
-      background-size: 100% 100%, 100% var(--gc-ul-h) !important;
-      background-repeat: no-repeat, no-repeat !important;
-      background-attachment: local, local !important;
-      -webkit-mask-image:
-        linear-gradient(#000, #000),
-        repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
-      -webkit-mask-position: 0 0, 0 100%;
-      -webkit-mask-size: 100% calc(100% - var(--gc-ul-h)), auto var(--gc-ul-h);
-      -webkit-mask-repeat: no-repeat, repeat-x;
-      -webkit-mask-composite: source-over;
-      mask-image:
-        linear-gradient(#000, #000),
-        repeating-linear-gradient(90deg, #000 0 1.5px, transparent 1.5px 4.5px);
-      mask-position: 0 0, 0 100%;
-      mask-size: 100% calc(100% - var(--gc-ul-h)), auto var(--gc-ul-h);
-      mask-repeat: no-repeat, repeat-x;
-      mask-composite: add;
+      background-position: 0 0 !important;
+      background-size: 100% 100% !important;
+      background-repeat: no-repeat !important;
+      background-attachment: local !important;
+      -webkit-mask-image: linear-gradient(#000, #000);
+      mask-image: linear-gradient(#000, #000);
+      -webkit-mask-position: 0 0;
+      mask-position: 0 0;
+      -webkit-mask-size: 100% calc(100% - max(var(--gc-ul-h), var(--gc-ul-dot-d)));
+      mask-size: 100% calc(100% - max(var(--gc-ul-h), var(--gc-ul-dot-d)));
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      transition:
+        --gc-ul-o var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay),
+        --gc-ul-wash var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay),
+        --gc-ul-progress var(--gc-ul-dur) var(--gc-ul-ease) var(--gc-ul-delay);
     }
+    .gc-has-counterpoint.gc-ul-in {
+      --gc-ul-o: var(--gc-ul-o-rest);
+      --gc-ul-progress: 1;
+    }
+    .gc-has-counterpoint.gc-ul-no-trans { transition: none !important; }
     span.gc-has-counterpoint:hover,
     .gc-has-counterpoint:hover,
     span.gc-has-counterpoint.gc-popover-open,
     .gc-has-counterpoint.gc-popover-open {
-      --gc-ul-o: 1;
-      --gc-ul-h: 2px;
-      --gc-ul-wash: 0.08;
+      --gc-ul-o: var(--gc-ul-o-hover);
+      --gc-ul-h: var(--gc-ul-h-hover);
+      --gc-ul-wash: var(--gc-ul-wash-hover);
+    }
+    .gc-round-layer {
+      display: inline-block;
+      width: 0;
+      height: 0;
+      overflow: visible;
+      vertical-align: top;
+      opacity: 0;
+      transition: opacity var(--gc-ul-hover-dur) ease;
+    }
+    span.gc-has-counterpoint.gc-ul-in + .gc-round-layer,
+    .gc-has-counterpoint.gc-ul-in + .gc-round-layer {
+      opacity: var(--gc-ul-o-rest);
+    }
+    span.gc-has-counterpoint.gc-ul-in:hover + .gc-round-layer,
+    .gc-has-counterpoint.gc-ul-in:hover + .gc-round-layer,
+    span.gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer,
+    .gc-has-counterpoint.gc-ul-in.gc-popover-open + .gc-round-layer {
+      opacity: var(--gc-ul-o-hover);
+    }
+    .gc-round-dot {
+      position: fixed;
+      display: block;
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 5;
+      background-image: linear-gradient(
+        90deg,
+        var(--gc-c1) 0%,
+        var(--gc-c2) var(--gc-stop-mid),
+        var(--gc-c3) 100%
+      );
+      background-repeat: no-repeat;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      span.gc-has-counterpoint,
+      .gc-has-counterpoint { transition: none !important; }
+      .gc-has-counterpoint.gc-ul-in {
+        --gc-ul-progress: 1;
+        --gc-ul-o: var(--gc-ul-o-rest);
+      }
     }
 
     .example-label {
@@ -410,7 +474,7 @@
   <div class="page">
     <aside>
       <h1>Google Counterpoint</h1>
-      <p>Subtle Gmail-style underline on the host reply. Hover to read Gemini’s take. Light/dark follow theme. <a href="underline-dial.html" style="color: inherit; text-underline-offset: 2px;">Underline enter dial kit →</a></p>
+      <p>Subtle aurora underline on the host reply. Hover to read Gemini’s take. Light/dark follow theme.</p>
 
       <div class="theme-row" id="themes">
         <button type="button" data-theme="system" class="active">System</button>
@@ -493,23 +557,109 @@
       return Array.from(document.querySelectorAll('.fake-chat .gc-has-counterpoint'));
     }
 
-    /** Match production: soft spatial wash + thin underline strip. */
+    const UL_DOT_D = 2;
+    const UL_DOT_GAP = 3;
+
+    function markProgress(el) {
+      const n = parseFloat(getComputedStyle(el).getPropertyValue('--gc-ul-progress'));
+      return Number.isFinite(n) ? n : 1;
+    }
+
+    function pathWindows(rects, progress) {
+      const total = rects.reduce((sum, box) => sum + box.width, 0) || 1;
+      let rest = Math.max(0, Math.min(1, progress)) * total;
+      const vis = new Map();
+      rects.forEach((box) => {
+        const amount = Math.max(0, Math.min(box.width, rest));
+        rest -= amount;
+        vis.set(box, { left: box.left, right: box.left + amount });
+      });
+      return vis;
+    }
+
+    function paintRoundDots(el, bounds, progress) {
+      const next = el.nextElementSibling;
+      if (next?.classList?.contains('gc-round-layer')) next.remove();
+      const rects = Array.from(el.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);
+      if (!rects.length || !bounds) return;
+      const { minLeft, totalWidth } = bounds;
+      const period = UL_DOT_D + UL_DOT_GAP;
+      const vis = pathWindows(rects, progress == null ? markProgress(el) : progress);
+      const layer = document.createElement('span');
+      layer.className = 'gc-round-layer';
+      layer.setAttribute('aria-hidden', 'true');
+      el.insertAdjacentElement('afterend', layer);
+      rects.forEach((box) => {
+        const win = vis.get(box);
+        if (!win || win.right - win.left < 0.5) return;
+        const y = box.bottom - UL_DOT_D;
+        for (let x = box.left; x <= box.right - UL_DOT_D + 0.01; x += period) {
+          if (x + UL_DOT_D < win.left - 0.01 || x > win.right + 0.01) continue;
+          const dot = document.createElement('span');
+          dot.className = 'gc-round-dot';
+          dot.style.left = `${x}px`;
+          dot.style.top = `${y}px`;
+          dot.style.width = `${UL_DOT_D}px`;
+          dot.style.height = `${UL_DOT_D}px`;
+          dot.style.backgroundSize = `${totalWidth}px 100%`;
+          dot.style.backgroundPosition = `${minLeft - x}px 0`;
+          layer.appendChild(dot);
+        }
+      });
+    }
+
+    /** Match production: spatial wash + round aurora dots. */
     function paintSpatialMarks() {
+      document.querySelectorAll('.gc-round-layer').forEach((n) => n.remove());
       marks().forEach((el) => {
         const rects = Array.from(el.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);
         if (!rects.length) return;
         const minLeft = Math.round(Math.min(...rects.map((r) => r.left)));
         const totalWidth = Math.max(1, Math.ceil(Math.max(...rects.map((r) => r.right)) - minLeft));
-        el.style.setProperty('background-attachment', 'local, local', 'important');
-        el.style.setProperty('background-position', `0 0, 0 100%`, 'important');
-        el.style.setProperty(
-          'background-size',
-          `${totalWidth}px 100%, ${totalWidth}px var(--gc-ul-h, 1.5px)`,
-          'important'
-        );
+        el.style.setProperty('background-attachment', 'local', 'important');
+        el.style.setProperty('background-position', '0 0', 'important');
+        el.style.setProperty('background-size', `${totalWidth}px 100%`, 'important');
+        paintRoundDots(el, { minLeft, totalWidth });
       });
     }
+
+    let enterTick = 0;
+    function runEnter() {
+      const list = marks();
+      if (!list.length) return;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        list.forEach((el) => el.classList.add('gc-ul-in'));
+        paintSpatialMarks();
+        return;
+      }
+      list.forEach((el) => {
+        el.classList.add('gc-ul-no-trans');
+        el.classList.remove('gc-ul-in');
+        el.style.setProperty('--gc-ul-o', '0');
+        el.style.setProperty('--gc-ul-progress', '0');
+        el.style.setProperty('--gc-ul-wash', '0');
+      });
+      paintSpatialMarks();
+      requestAnimationFrame(() => {
+        list.forEach((el) => {
+          el.classList.remove('gc-ul-no-trans');
+          el.style.removeProperty('--gc-ul-o');
+          el.style.removeProperty('--gc-ul-progress');
+          el.style.removeProperty('--gc-ul-wash');
+          void el.offsetWidth;
+          el.classList.add('gc-ul-in');
+        });
+        cancelAnimationFrame(enterTick);
+        const step = () => {
+          paintSpatialMarks();
+          if (list.some((el) => markProgress(el) < 0.999)) enterTick = requestAnimationFrame(step);
+        };
+        enterTick = requestAnimationFrame(step);
+      });
+    }
+
     paintSpatialMarks();
+    requestAnimationFrame(runEnter);
     window.addEventListener('resize', paintSpatialMarks, { passive: true });
     window.addEventListener('scroll', paintSpatialMarks, { passive: true });
 
